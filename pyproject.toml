@@ -1,0 +1,35 @@
+[project]
+name = "data-warehouse-local"
+version = "0.1.0"
+description = "Local data warehouse experimentation: CSV -> Iceberg via PyIceberg / DuckDB / DataFusion, queried by Trino / DuckDB / Druid."
+requires-python = ">=3.11"
+dependencies = [
+    "pyiceberg[s3fs,pyarrow,sql-postgres]>=0.8.0",
+    "pyarrow>=17.0.0",
+    "pandas>=2.2.0",
+    "duckdb>=1.1.3",
+    "datafusion>=43.1.0",
+    "boto3>=1.35.0",
+    "requests>=2.32.0",
+    "httpx>=0.27.0",
+    "rich>=13.9.0",
+    "click>=8.1.7",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+duckdb-api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scripts"]
+
+[tool.uv]
+package = false

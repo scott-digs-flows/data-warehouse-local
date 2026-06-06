@@ -1,0 +1,41 @@
+# Adapted from apache/druid distribution docker-compose env.
+# Common configuration for all Druid services.
+
+# Java
+DRUID_LOG4J=<?xml version="1.0" encoding="UTF-8" ?><Configuration status="WARN"><Appenders><Console name="Console" target="SYSTEM_OUT"><PatternLayout pattern="%d{ISO8601} %p [%t] %c - %m%n"/></Console></Appenders><Loggers><Root level="info"><AppenderRef ref="Console"/></Root><Logger name="org.apache.druid.jetty.RequestLog" additivity="false" level="DEBUG"><AppenderRef ref="Console"/></Logger></Loggers></Configuration>
+
+# Druid common runtime properties
+druid_extensions_loadList=["druid-histogram","druid-datasketches","druid-lookups-cached-global","postgresql-metadata-storage","druid-s3-extensions","druid-iceberg-extensions"]
+
+druid_startup_logging_logProperties=true
+
+druid_zk_service_host=zookeeper
+
+druid_metadata_storage_host=
+druid_metadata_storage_type=postgresql
+druid_metadata_storage_connector_connectURI=jdbc:postgresql://postgres:5432/druid
+druid_metadata_storage_connector_user=lakekeeper
+druid_metadata_storage_connector_password=lakekeeper
+
+# Deep storage on MinIO (S3)
+druid_storage_type=s3
+druid_storage_bucket=warehouse
+druid_storage_baseKey=druid/segments
+druid_s3_accessKey=admin
+druid_s3_secretKey=admin12345
+druid_s3_endpoint_url=http://minio:9000
+druid_s3_enablePathStyleAccess=true
+druid_s3_protocol=http
+
+# Indexer logs on MinIO (S3)
+druid_indexer_logs_type=s3
+druid_indexer_logs_s3Bucket=warehouse
+druid_indexer_logs_s3Prefix=druid/indexing-logs
+
+druid_indexer_runner_javaOptsArray=["-server","-Xmx512m","-Xms512m","-XX:MaxDirectMemorySize=2g","-Duser.timezone=UTC","-Dfile.encoding=UTF-8","-XX:+ExitOnOutOfMemoryError","-Dlog4j.configurationFactory=org.apache.druid.common.config.Log4jShutdown","-Dlog4j.shutdownCallbackRegistry=org.apache.druid.common.config.Log4jShutdown"]
+druid_indexer_fork_property_druid_processing_buffer_sizeBytes=256MiB
+
+druid_processing_numThreads=2
+druid_processing_numMergeBuffers=2
+
+DRUID_LOG4J=<?xml version="1.0" encoding="UTF-8" ?><Configuration status="WARN"><Appenders><Console name="Console" target="SYSTEM_OUT"><PatternLayout pattern="%d{ISO8601} %p [%t] %c - %m%n"/></Console></Appenders><Loggers><Root level="info"><AppenderRef ref="Console"/></Root><Logger name="org.apache.druid.jetty.RequestLog" additivity="false" level="DEBUG"><AppenderRef ref="Console"/></Logger></Loggers></Configuration>

@@ -1,0 +1,253 @@
+# Local data warehouse stack.
+#
+# Profiles:
+#   default       -> minio, postgres, lakekeeper (everything loaders need)
+#   engines       -> trino, duckdb-api
+#   druid         -> zookeeper + druid stack
+#   all           -> shorthand to spin up everything
+#
+# Examples:
+#   docker compose up -d                       # core only (catalog + storage)
+#   docker compose --profile engines up -d     # core + Trino + DuckDB API
+#   docker compose --profile druid up -d       # core + Druid
+#   docker compose --profile all up -d         # everything
+
+x-druid-common: &druid-common
+  image: apache/druid:31.0.1
+  env_file:
+    - ./services/druid/environment
+  depends_on:
+    zookeeper:
+      condition: service_started
+    postgres:
+      condition: service_healthy
+    minio-init:
+      condition: service_completed_successfully
+  networks: [warehouse-net]
+
+services:
+  # ============================================================
+  # Object storage (MinIO, S3-compatible)
+  # ============================================================
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [warehouse-net]
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    container_name: minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-admin} ${MINIO_ROOT_PASSWORD:-admin12345} &&
+      mc mb -p local/${MINIO_BUCKET:-warehouse} &&
+      echo 'MinIO bucket ready: ${MINIO_BUCKET:-warehouse}';
+      "
+    networks: [warehouse-net]
+
+  # ============================================================
+  # Postgres (backs Lakekeeper catalog metadata + Druid metadata)
+  # ============================================================
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lakekeeper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lakekeeper}
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/lakekeeper/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lakekeeper}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [warehouse-net]
+
+  # ============================================================
+  # Lakekeeper Iceberg REST catalog
+  # ============================================================
+  lakekeeper-migrate:
+    image: &lakekeeper-image quay.io/lakekeeper/catalog:latest-main
+    container_name: lakekeeper-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: &lakekeeper-env
+      LAKEKEEPER__PG_ENCRYPTION_KEY: ${LAKEKEEPER_PG_ENCRYPTION_KEY:-change-me-not-secure}
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://${POSTGRES_USER:-lakekeeper}:${POSTGRES_PASSWORD:-lakekeeper}@postgres:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://${POSTGRES_USER:-lakekeeper}:${POSTGRES_PASSWORD:-lakekeeper}@postgres:5432/lakekeeper
+      LAKEKEEPER__BASE_URI: http://lakekeeper:8181
+      RUST_LOG: info
+    command: ["migrate"]
+    networks: [warehouse-net]
+
+  lakekeeper:
+    image: *lakekeeper-image
+    container_name: lakekeeper
+    depends_on:
+      lakekeeper-migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment: *lakekeeper-env
+    command: ["serve"]
+    ports:
+      - "8181:8181"
+    healthcheck:
+      test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [warehouse-net]
+
+  lakekeeper-bootstrap:
+    image: curlimages/curl:8.11.0
+    container_name: lakekeeper-bootstrap
+    depends_on:
+      lakekeeper:
+        condition: service_healthy
+    volumes:
+      - ./services/lakekeeper/bootstrap.sh:/bootstrap.sh:ro
+      - ./services/lakekeeper/create-warehouse.json:/create-warehouse.json:ro
+    entrypoint: ["sh", "/bootstrap.sh"]
+    networks: [warehouse-net]
+
+  # ============================================================
+  # Trino (engines profile)
+  # ============================================================
+  trino:
+    image: trinodb/trino:466
+    container_name: trino
+    profiles: [engines, all]
+    depends_on:
+      lakekeeper:
+        condition: service_healthy
+    ports:
+      - "${TRINO_PORT:-8080}:8080"
+    volumes:
+      - ./services/trino/catalog:/etc/trino/catalog:ro
+    networks: [warehouse-net]
+
+  # ============================================================
+  # DuckDB FastAPI (engines profile)
+  # ============================================================
+  duckdb-api:
+    build:
+      context: ./services/duckdb-api
+    image: duckdb-api:local
+    container_name: duckdb-api
+    profiles: [engines, all]
+    depends_on:
+      lakekeeper:
+        condition: service_healthy
+    ports:
+      - "${DUCKDB_API_PORT:-8000}:8000"
+    environment:
+      ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
+      ICEBERG_WAREHOUSE: ${LAKEKEEPER_WAREHOUSE:-adventure_works_dw}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-admin12345}
+      S3_ENDPOINT: http://minio:9000
+      AWS_REGION: us-east-1
+    networks: [warehouse-net]
+
+  # ============================================================
+  # Druid (druid profile)
+  # ============================================================
+  zookeeper:
+    image: zookeeper:3.9
+    container_name: zookeeper
+    profiles: [druid, all]
+    environment:
+      ZOO_MY_ID: 1
+    networks: [warehouse-net]
+
+  druid-coordinator:
+    <<: *druid-common
+    container_name: druid-coordinator
+    profiles: [druid, all]
+    command: ["coordinator"]
+    ports:
+      - "${DRUID_COORDINATOR_PORT:-8081}:8081"
+    volumes:
+      - druid_coordinator_var:/opt/druid/var
+      - druid_shared:/opt/shared
+
+  druid-broker:
+    <<: *druid-common
+    container_name: druid-broker
+    profiles: [druid, all]
+    command: ["broker"]
+    ports:
+      - "8082:8082"
+    volumes:
+      - druid_broker_var:/opt/druid/var
+      - druid_shared:/opt/shared
+
+  druid-historical:
+    <<: *druid-common
+    container_name: druid-historical
+    profiles: [druid, all]
+    command: ["historical"]
+    ports:
+      - "8083:8083"
+    volumes:
+      - druid_historical_var:/opt/druid/var
+      - druid_shared:/opt/shared
+
+  druid-middlemanager:
+    <<: *druid-common
+    container_name: druid-middlemanager
+    profiles: [druid, all]
+    command: ["middleManager"]
+    ports:
+      - "8091:8091"
+      - "8100-8105:8100-8105"
+    volumes:
+      - druid_middle_var:/opt/druid/var
+      - druid_shared:/opt/shared
+
+  druid-router:
+    <<: *druid-common
+    container_name: druid-router
+    profiles: [druid, all]
+    command: ["router"]
+    ports:
+      - "${DRUID_ROUTER_PORT:-8888}:8888"
+    volumes:
+      - druid_router_var:/opt/druid/var
+      - druid_shared:/opt/shared
+
+volumes:
+  minio_data:
+  postgres_data:
+  druid_coordinator_var:
+  druid_broker_var:
+  druid_historical_var:
+  druid_middle_var:
+  druid_router_var:
+  druid_shared:
+
+networks:
+  warehouse-net:
+    name: warehouse-net
+    driver: bridge
