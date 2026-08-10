@@ -1,180 +1,246 @@
 # data-warehouse-local
 
-A local sandbox for experimenting with CSV → Iceberg conversion across three
-loader libraries (PyIceberg, DuckDB, Apache DataFusion), then querying the same
-Iceberg tables from three engines (Trino, DuckDB-via-HTTP, Druid) — all running
-in Docker against a Lakekeeper REST catalog and MinIO object storage.
+A local Iceberg lake with several query engines pointed at it, built to back a
+**custom BI application developed in a separate project**.
 
-Source dataset: Microsoft's **Adventure Works DW 2022** sample.
+Two questions drive this repo:
 
-The downstream Dash BI app lives in a separate project; this repo only owns the
-data layer and the engine endpoints.
+1. **Connector behaviour.** Give the BI app four real SQL endpoints — Trino,
+   DuckDB, ClickHouse, Postgres — so its dialect layer, type handling, and
+   metadata discovery get exercised against genuinely different engines.
+2. **Iceberg as a neutral layer.** Can one lake serve every engine, instead of
+   one ETL pipeline per engine? Partly — and the partial answer is the
+   interesting result. See [Tiers](#engine-tiers).
 
-## Architecture
+Source data is Microsoft's **AdventureWorks DW 2022** sample: a real star
+schema, small enough to reload in seconds. It is sized for fast app iteration,
+**not** for performance measurement — every engine answers instantly at this
+volume, so no conclusions about speed should be drawn here.
+
+## Engine tiers
+
+The central finding: Iceberg gets you a shared layer for *most* engines, and the
+rest need a copy.
 
 ```
-                   ┌──────────────────────────┐
-                   │       MinIO (S3)         │   warehouse bucket
-                   └────────────┬─────────────┘
-                                │ s3a://warehouse/adventure_works_dw/...
-                   ┌────────────┴─────────────┐
-                   │  Lakekeeper REST catalog │   warehouse=adventure_works_dw
-                   └────────────┬─────────────┘
-                                │  http://lakekeeper:8181/catalog
-        ┌───────────────────────┼────────────────────────┐
-        │                       │                        │
- ┌──────┴──────┐         ┌──────┴──────┐         ┌──────┴──────┐
- │  PyIceberg  │         │   DuckDB    │         │ DataFusion  │   loaders
- │  load_*     │         │  load_*     │         │  load_*     │   write CSV->
- └─────────────┘         └─────────────┘         └─────────────┘   namespace
-                                                                  pyiceberg
-                                                                  duckdb
-                                                                  datafusion
-        ┌───────────────────────┬────────────────────────┐
-        │                       │                        │
- ┌──────┴──────┐         ┌──────┴──────┐         ┌──────┴──────┐
- │    Trino    │         │ DuckDB API  │         │   Druid     │   engines
- │   :8080     │         │   :8000     │         │   :8888     │
- └─────────────┘         └─────────────┘         └─────────────┘
-        │                       │                        │
-        └───────────────────────┴────────────────────────┘
-                                ↓
-                     (future) Python Dash app
+                        ┌──────────────────────┐
+                        │   MinIO (S3)         │
+                        └──────────┬───────────┘
+                        ┌──────────┴───────────┐
+                        │ Lakekeeper REST      │  warehouse: adventure_works_dw
+                        │ Iceberg catalog      │  namespace: raw
+                        └──────────┬───────────┘
+                                   │
+   ── Tier 1: read in place, zero copy ─────────────────────────────
+                                   │
+        ┌──────────────┬───────────┼──────────────┐
+        │              │           │              │
+   ┌────┴────┐   ┌─────┴─────┐ ┌───┴──────┐  ┌────┴──────────┐
+   │  Trino  │   │  DuckDB   │ │ DuckDB   │  │  ClickHouse   │
+   │  :8080  │   │  HTTP     │ │ embedded │  │  :8123        │
+   │         │   │  :8000    │ │ in-proc  │  │               │
+   └─────────┘   └───────────┘ └──────────┘  └───────────────┘
+
+   ── Tier 2: requires a copy ──────────────────────────────────────
+                                   │
+                          sync_postgres.py
+                                   │
+                            ┌──────┴──────┐
+                            │  Postgres   │  db: analytics
+                            │  :5432      │  schema: raw
+                            └─────────────┘
 ```
 
-| Component       | Role                              | Image / location                            |
-| --------------- | --------------------------------- | ------------------------------------------- |
-| MinIO           | S3-compatible object storage      | `minio/minio`                               |
-| Postgres        | Catalog + Druid metadata          | `postgres:16`                               |
-| Lakekeeper      | Iceberg REST catalog              | `quay.io/lakekeeper/catalog`                |
-| Trino           | Query engine                      | `trinodb/trino`                             |
-| DuckDB API      | FastAPI wrapper over DuckDB       | `./services/duckdb-api`                     |
-| Druid           | OLAP engine                       | `apache/druid:31.0.1`                       |
-| Zookeeper       | Coordinates Druid services        | `zookeeper:3.9`                             |
+**Tier 1** engines query the same Iceberg tables directly. **Postgres has no
+mature native Iceberg reader**, so it holds a synced copy — one extra job, one
+more thing that can go stale. That is the concrete cost of the tradeoff, and
+having exactly one copy-based engine keeps it easy to reason about.
+
+| Component | Role | Image |
+| --- | --- | --- |
+| MinIO | S3-compatible object storage | `minio/minio:RELEASE.2025-09-07T16-13-09Z` |
+| Postgres | Catalog metadata + `analytics` copy | `postgres:16` |
+| Lakekeeper | Iceberg REST catalog | `quay.io/lakekeeper/catalog:v0.13.1` |
+| Trino | Query engine | `trinodb/trino:466` |
+| DuckDB API | FastAPI wrapper over DuckDB | `./services/duckdb-api` |
+| ClickHouse | Query engine | `clickhouse/clickhouse-server:26.7.3.19` |
 
 ## Prerequisites
 
-- Docker (with Compose v2)
+- Docker with Compose v2 (~8 GB allocated is plenty)
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
-- ~6 GB free RAM for the full stack (Druid is the heaviest tenant)
-- On Apple Silicon: SQL Server runs under amd64 emulation during the CSV
-  extraction step
+- On Apple Silicon, SQL Server runs under amd64 emulation during extraction
+
+**Required `/etc/hosts` entries:**
+
+```
+127.0.0.1  lakekeeper
+127.0.0.1  minio
+```
+
+The REST catalog advertises its own URI and object-storage endpoint using
+*internal Docker hostnames* (`http://lakekeeper:8181`, `http://minio:9000`).
+Clients running on the host follow those names, so without these entries every
+host-side script fails in confusing ways. This is the single most likely reason
+a fresh checkout does not work.
 
 ## Quickstart
 
 ```bash
-# 1. Configuration
-cp .env.example .env
-# (edit if you want non-default ports/passwords)
+cp .env.example .env          # single source for all credentials and ports
+uv sync --extra duckdb-api
 
-# 2. Install Python deps
-uv sync
+docker compose up -d                     # lake: MinIO + Postgres + Lakekeeper
+uv run python scripts/download_adventure_works.py   # ~10 min (SQL Server restore)
+uv run python scripts/load_iceberg.py               # CSV -> Iceberg `raw`
 
-# 3. Bring up the catalog + storage
-docker compose up -d
-# Wait until `docker compose ps` shows lakekeeper-bootstrap as Exited (0).
+docker compose --profile engines up -d   # Trino + DuckDB API + ClickHouse
+uv run python scripts/sync_postgres.py   # Iceberg -> Postgres copy
 
-# 4. Download Adventure Works CSVs (~50 MB .bak, ~30 tables)
-uv run python scripts/download_adventure_works.py
-
-# 5. Run a single loader, or benchmark all three
-uv run python scripts/load_pyiceberg.py
-uv run python scripts/benchmark.py
-
-# 6. Bring up the query engines
-docker compose --profile engines up -d
-# Trino UI:    http://localhost:8080
-# DuckDB API:  http://localhost:8000/docs
-
-# 7. Bring up Druid and ingest from Iceberg
-docker compose --profile druid up -d
-uv run python scripts/druid_ingest.py --source-namespace pyiceberg --wait
-# Druid console: http://localhost:8888
+uv run python scripts/smoke_test.py      # verify all engines agree
 ```
+
+Expected final output:
+
+```
+✓ All engines agree on 60,398 rows
+✓ All engines agree on the aggregate (10 territory groups, sums matched to 2dp)
+```
+
+## The engine manifest
+
+[`engines.yaml`](engines.yaml) is the contract between this repo and the BI app.
+It carries, per engine: connection details, the SQLGlot/Ibis **dialect** name, a
+**`qualify` template** for building table references, and identifier-case
+behaviour. The app reads it and needs no hardcoded connection logic — adding an
+engine is a compose service plus a manifest entry.
+
+The `qualify` template exists because engines genuinely disagree about how an
+Iceberg namespace surfaces:
+
+| Engine | Reference for `fact_internet_sales` |
+| --- | --- |
+| Trino | `iceberg.raw."fact_internet_sales"` |
+| DuckDB | `ice.raw."fact_internet_sales"` |
+| ClickHouse | `datalake."raw.fact_internet_sales"` — namespace folded into the name |
+| Postgres | `raw."fact_internet_sales"` |
+
+[`scripts/smoke_test.py`](scripts/smoke_test.py) is the reference implementation
+of consuming the manifest, and the best starting point for the app's connector
+layer.
+
+## Data conventions
+
+- **Warehouse** `adventure_works_dw`, **namespace** `raw` (`marts` is reserved
+  for pre-aggregated tables when raw star-schema queries get awkward to chart).
+- **Identifiers are snake_case.** `DimCustomer.EnglishProductName` becomes
+  `dim_customer.english_product_name`. Engines disagree on case folding — Trino
+  lowercases, Postgres folds unquoted names, ClickHouse is case-sensitive,
+  Snowflake uppercases — so normalising once at load time removes an entire
+  class of cross-engine bug. The CSV extract keeps the original casing;
+  normalisation is a documented transformation in `load_iceberg.py`.
+- **Types are pinned, never inferred.** `download_adventure_works.py` writes
+  authoritative column types from SQL Server's `INFORMATION_SCHEMA` to
+  `schemas/*.json`, and the loader uses those. CSV type inference disagrees
+  between readers, which would give each engine a subtly different view of the
+  same data.
+- **Tables are unpartitioned.** The largest is under a million rows.
+
+### Deliberate exclusions
+
+| Excluded | Why |
+| --- | --- |
+| `DatabaseLog` table | SQL Server DDL audit table, not part of the star schema. Its `XmlEvent` column has embedded newlines that `bcp` character format cannot round-trip — only 5 of 1,864 exported rows were structurally intact. |
+| 3 `varbinary` columns | Product/employee/territory photos: ~18 MB across ~900 rows, no BI value, and they carry NUL bytes that Postgres `text` rejects. |
+
+Both are enforced in [`scripts/_common.py`](scripts/_common.py). The download
+script also verifies each CSV by parsing it and reports any ragged rows, rather
+than trusting a raw line count.
+
+## Querying each engine
+
+```bash
+# Trino
+docker compose exec trino trino --catalog iceberg --schema raw \
+  --execute 'SELECT COUNT(*) FROM "fact_internet_sales"'
+
+# ClickHouse
+docker exec clickhouse clickhouse-client \
+  --query 'SELECT count() FROM datalake."raw.fact_internet_sales"'
+
+# DuckDB over HTTP  (interactive docs at http://localhost:8000/docs)
+curl -X POST http://localhost:8000/query -H 'Content-Type: application/json' \
+  -d '{"sql":"SELECT COUNT(*) FROM ice.raw.\"fact_internet_sales\""}'
+
+# Postgres
+docker exec postgres psql -U lakekeeper -d analytics \
+  -c 'SELECT COUNT(*) FROM raw.fact_internet_sales'
+```
+
+## Gotchas worth knowing
+
+These all cost real debugging time; they are recorded so they only cost it once.
+
+- **DuckDB secrets are scoped to `s3://`.** The Iceberg extension fetches
+  manifest `.avro` files over an `http://` URL, which falls outside a
+  `CREATE SECRET` scope, so those requests go out unsigned and MinIO answers
+  403 — while plain `s3://` reads succeed. Use the global `SET s3_*` settings
+  instead (see `attach_sql` in `engines.yaml`).
+- **MinIO intermittently 403s the first few object operations of a process**,
+  then settles. Reproduced identically under s3fs and PyArrowFileIO, and under
+  two MinIO releases. `with_s3_retry()` in `_common.py` absorbs it; only wrap
+  genuinely idempotent operations.
+- **ClickHouse won't use server-configured S3 credentials in user queries**
+  unless `s3_allow_server_credentials_in_user_queries` is set. The alternative
+  puts the MinIO key/secret into SQL and `SHOW CREATE DATABASE` output.
+- **ClickHouse ships listening on `::1` only.** The container looks healthy —
+  its healthcheck runs *inside* the container — while being unreachable from
+  everywhere else. `config.d/network.xml` fixes it.
+- **ClickHouse `initdb.d` scripts run only on a first-ever start.** One failed
+  boot leaves the catalog permanently unattached with no obvious symptom, so
+  catalog attachment is an idempotent one-shot compose service instead.
+- **JSON over HTTP loses numeric types.** The DuckDB HTTP endpoint returns
+  `SUM(...)` as the string `"3649866.5512"`. A BI app on a JSON transport has to
+  re-infer types a native driver would have preserved.
+- **`bcp -k` writes some NULL `nvarchar` values as a literal NUL byte**, not an
+  empty field. Parquet and Iceberg carry them fine; Postgres `text` rejects
+  them. Cleaned at the load boundary so every engine sees the same data.
 
 ## Directory layout
 
 ```
 data-warehouse-local/
+├── engines.yaml                  # contract consumed by the BI app
 ├── docker-compose.yml
-├── .env.example
-├── pyproject.toml
+├── schemas/                      # pinned column types (checked in)
 ├── scripts/
-│   ├── download_adventure_works.py   # bak -> SQL Server -> bcp -> CSV
-│   ├── load_pyiceberg.py             # CSV -> namespace pyiceberg
-│   ├── load_duckdb.py                # CSV -> namespace duckdb
-│   ├── load_datafusion.py            # CSV -> namespace datafusion
-│   ├── benchmark.py                  # runs all three, writes report
-│   ├── druid_ingest.py               # submits Druid ingestion tasks
-│   ├── _common.py                    # shared catalog + S3 config
-│   └── _results.py                   # benchmark result dataclasses
+│   ├── download_adventure_works.py   # bak -> SQL Server -> bcp -> CSV + schemas
+│   ├── load_iceberg.py               # CSV -> Iceberg `raw`  (canonical loader)
+│   ├── sync_postgres.py              # Iceberg -> Postgres   (full refresh)
+│   ├── smoke_test.py                 # query every engine, compare results
+│   ├── _common.py                    # config, snake_case, retry helper
+│   └── _manifest.py                  # engines.yaml reader
 ├── services/
+│   ├── clickhouse/{config.d,users.d,attach-catalog.sh}
 │   ├── duckdb-api/                   # FastAPI service
-│   ├── trino/catalog/iceberg.properties
-│   ├── lakekeeper/
-│   │   ├── init-databases.sql        # Postgres DB bootstrap
-│   │   └── create-warehouse.json     # warehouse creation payload
-│   └── druid/environment             # Druid env config
-├── data/                             # downloaded CSVs (gitignored)
-└── reports/                          # benchmark output (gitignored)
+│   ├── lakekeeper/                   # bootstrap + warehouse template
+│   ├── postgres/init-databases.sql
+│   └── trino/catalog/iceberg.properties
+├── data/                         # extracted CSVs (gitignored)
+└── experiments/loader-comparison/    # parked: PyIceberg vs DuckDB vs DataFusion
 ```
 
-## Database / namespace conventions
+## Deferred, deliberately
 
-- Iceberg warehouse: `adventure_works_dw`
-- Namespaces (one per loader): `pyiceberg`, `duckdb`, `datafusion`
-- Table names: identical to source SQL Server table names (e.g. `DimCustomer`,
-  `FactInternetSales`)
-
-## Querying from each engine
-
-### Trino
-
-```bash
-docker compose exec trino trino --catalog iceberg
-trino:default> SHOW SCHEMAS;
-trino:default> SELECT COUNT(*) FROM iceberg.pyiceberg."DimCustomer";
-```
-
-### DuckDB API
-
-```bash
-curl -X POST http://localhost:8000/query \
-    -H 'Content-Type: application/json' \
-    -d '{"sql": "SELECT COUNT(*) FROM ice.pyiceberg.\"DimCustomer\""}'
-```
-
-Browse interactive docs at <http://localhost:8000/docs>.
-
-### Druid
-
-After running `scripts/druid_ingest.py`, datasources are named
-`<namespace>__<table>` (e.g. `pyiceberg__FactInternetSales`). Query via the
-Druid console (<http://localhost:8888>) or the SQL API.
-
-## Benchmarking
-
-```bash
-uv run python scripts/benchmark.py                          # all three
-uv run python scripts/benchmark.py --only duckdb --repeat 3 # specific loader
-```
-
-Output: `reports/benchmark_<timestamp>.csv` and `.json` with per-table and
-per-run timings.
-
-## Troubleshooting
-
-- **`lakekeeper-bootstrap` keeps restarting** — the warehouse may already
-  exist. Re-run the curl manually or wipe the volume with
-  `docker compose down -v`.
-- **`SQL Server cannot find /var/opt/mssql/backup/...bak`** — the download
-  step failed or the bak is truncated. Delete
-  `data/adventure_works_dw/AdventureWorksDW2022.bak` and re-run.
-- **DuckDB iceberg writes fail with "not supported"** — bump the DuckDB
-  version in `pyproject.toml`. CTAS against attached REST catalogs landed
-  in 1.2 and was made robust in 1.3.
-- **Druid Iceberg ingestion task fails with classloader errors** — confirm
-  `druid-iceberg-extensions` is in `druid_extensions_loadList` inside
-  `services/druid/environment`.
-- **Stack is slow on first start** — Druid takes ~60s to settle. Watch
-  `docker compose logs -f druid-coordinator` until you see "Coordinator started".
+- **Snowflake** — supports Iceberg, but requires real cloud object storage and
+  cannot read local MinIO. When needed, either point it at an S3 bucket or just
+  `COPY INTO` a trial account; for testing the app's connector, the data's
+  origin does not matter.
+- **StarRocks** — the most interesting engine for a BI workload (materialised
+  views over Iceberg with transparent query rewrite), but that advantage is
+  invisible at this data volume, where it is merely redundant with Trino.
+- **Druid** — dropped. It cannot read Iceberg; it copies data into its own
+  segment format, which made it an ETL target rather than an engine, at a cost
+  of six containers and most of the RAM budget.
+- **Incremental sync** — Postgres is a full refresh. The dataset reloads in
+  seconds, and Iceberg snapshots keep the incremental path open for later.

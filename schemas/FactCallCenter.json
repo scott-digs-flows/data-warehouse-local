@@ -1,0 +1,132 @@
+{
+  "source_table": "dbo.FactCallCenter",
+  "table": "fact_call_center",
+  "columns": [
+    {
+      "source_name": "FactCallCenterID",
+      "name": "fact_call_center_id",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "WageType",
+      "name": "wage_type",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "Shift",
+      "name": "shift",
+      "sql_type": "nvarchar",
+      "max_length": 20,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "LevelOneOperators",
+      "name": "level_one_operators",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "LevelTwoOperators",
+      "name": "level_two_operators",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "TotalOperators",
+      "name": "total_operators",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "Calls",
+      "name": "calls",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "AutomaticResponses",
+      "name": "automatic_responses",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "Orders",
+      "name": "orders",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "IssuesRaised",
+      "name": "issues_raised",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "AverageTimePerIssue",
+      "name": "average_time_per_issue",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ServiceGrade",
+      "name": "service_grade",
+      "sql_type": "float",
+      "max_length": null,
+      "precision": 53,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "Date",
+      "name": "date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

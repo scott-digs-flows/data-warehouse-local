@@ -1,0 +1,177 @@
+{
+  "source_table": "dbo.DimDate",
+  "table": "dim_date",
+  "columns": [
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "FullDateAlternateKey",
+      "name": "full_date_alternate_key",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "DayNumberOfWeek",
+      "name": "day_number_of_week",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "EnglishDayNameOfWeek",
+      "name": "english_day_name_of_week",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SpanishDayNameOfWeek",
+      "name": "spanish_day_name_of_week",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "FrenchDayNameOfWeek",
+      "name": "french_day_name_of_week",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "DayNumberOfMonth",
+      "name": "day_number_of_month",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DayNumberOfYear",
+      "name": "day_number_of_year",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "WeekNumberOfYear",
+      "name": "week_number_of_year",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "EnglishMonthName",
+      "name": "english_month_name",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SpanishMonthName",
+      "name": "spanish_month_name",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "FrenchMonthName",
+      "name": "french_month_name",
+      "sql_type": "nvarchar",
+      "max_length": 10,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "MonthNumberOfYear",
+      "name": "month_number_of_year",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CalendarQuarter",
+      "name": "calendar_quarter",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CalendarYear",
+      "name": "calendar_year",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CalendarSemester",
+      "name": "calendar_semester",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "FiscalQuarter",
+      "name": "fiscal_quarter",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "FiscalYear",
+      "name": "fiscal_year",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "FiscalSemester",
+      "name": "fiscal_semester",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    }
+  ]
+}

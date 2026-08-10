@@ -1,0 +1,96 @@
+{
+  "source_table": "dbo.DimAccount",
+  "table": "dim_account",
+  "columns": [
+    {
+      "source_name": "AccountKey",
+      "name": "account_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ParentAccountKey",
+      "name": "parent_account_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "AccountCodeAlternateKey",
+      "name": "account_code_alternate_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "ParentAccountCodeAlternateKey",
+      "name": "parent_account_code_alternate_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "AccountDescription",
+      "name": "account_description",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "AccountType",
+      "name": "account_type",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Operator",
+      "name": "operator",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CustomMembers",
+      "name": "custom_members",
+      "sql_type": "nvarchar",
+      "max_length": 300,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "ValueType",
+      "name": "value_type",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CustomMemberOptions",
+      "name": "custom_member_options",
+      "sql_type": "nvarchar",
+      "max_length": 200,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "source_table": "dbo.DimSalesTerritory",
+  "table": "dim_sales_territory",
+  "columns": [
+    {
+      "source_name": "SalesTerritoryKey",
+      "name": "sales_territory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesTerritoryAlternateKey",
+      "name": "sales_territory_alternate_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "SalesTerritoryRegion",
+      "name": "sales_territory_region",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesTerritoryCountry",
+      "name": "sales_territory_country",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesTerritoryGroup",
+      "name": "sales_territory_group",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "SalesTerritoryImage",
+      "name": "sales_territory_image",
+      "sql_type": "varbinary",
+      "max_length": -1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

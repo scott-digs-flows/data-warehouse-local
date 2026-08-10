@@ -48,9 +48,27 @@ def read_csv_to_arrow(path: Path) -> pa.Table:
     return pacsv.read_csv(path)
 
 
+def downcast_ns_timestamps(tbl: pa.Table) -> pa.Table:
+    """Cast any timestamp[ns] columns to timestamp[us].
+
+    PyArrow's CSV reader picks ns precision; Iceberg's spec only supports us.
+    """
+    new_fields = []
+    changed = False
+    for field in tbl.schema:
+        if pa.types.is_timestamp(field.type) and field.type.unit == "ns":
+            new_fields.append(field.with_type(pa.timestamp("us", tz=field.type.tz)))
+            changed = True
+        else:
+            new_fields.append(field)
+    if not changed:
+        return tbl
+    return tbl.cast(pa.schema(new_fields))
+
+
 def load_one(catalog: RestCatalog, csv_path: Path) -> TableResult:
     start = time.perf_counter()
-    arrow_tbl = read_csv_to_arrow(csv_path)
+    arrow_tbl = downcast_ns_timestamps(read_csv_to_arrow(csv_path))
     ident = (*NAMESPACE, csv_path.stem)
     try:
         catalog.drop_table(ident)

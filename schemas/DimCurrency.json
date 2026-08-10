@@ -1,0 +1,33 @@
+{
+  "source_table": "dbo.DimCurrency",
+  "table": "dim_currency",
+  "columns": [
+    {
+      "source_name": "CurrencyKey",
+      "name": "currency_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CurrencyAlternateKey",
+      "name": "currency_alternate_key",
+      "sql_type": "nchar",
+      "max_length": 3,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "CurrencyName",
+      "name": "currency_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    }
+  ]
+}

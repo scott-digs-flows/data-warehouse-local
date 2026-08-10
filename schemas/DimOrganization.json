@@ -1,0 +1,51 @@
+{
+  "source_table": "dbo.DimOrganization",
+  "table": "dim_organization",
+  "columns": [
+    {
+      "source_name": "OrganizationKey",
+      "name": "organization_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ParentOrganizationKey",
+      "name": "parent_organization_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "PercentageOfOwnership",
+      "name": "percentage_of_ownership",
+      "sql_type": "nvarchar",
+      "max_length": 16,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "OrganizationName",
+      "name": "organization_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CurrencyKey",
+      "name": "currency_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    }
+  ]
+}

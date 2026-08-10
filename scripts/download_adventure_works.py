@@ -1,4 +1,4 @@
-"""Download AdventureWorksDW and export every user table to CSV.
+"""Download AdventureWorksDW and export every user table to CSV + schema JSON.
 
 Pipeline:
   1. Download AdventureWorksDW2022.bak from Microsoft's sql-server-samples release.
@@ -6,7 +6,15 @@ Pipeline:
   3. Restore the .bak into it.
   4. bcp each user table out (pipe-delimited intermediate).
   5. Convert each to proper CSV (comma-separated, quoted) under data/adventure_works_dw/.
-  6. Stop and remove the container.
+  6. Write authoritative column types to schemas/<Table>.json.
+  7. Stop and remove the container.
+
+The CSV extract stays faithful to the source: original PascalCase identifiers,
+no renaming. Normalisation to snake_case happens at load time in load_iceberg.py.
+
+The schema JSON exists so loaders never infer types from CSV text. Inference
+disagrees across readers (int32 vs int64, string vs date, decimal handling),
+which would silently make each engine's view of the data subtly different.
 
 Requires `docker` on PATH. On Apple Silicon SQL Server runs under amd64 emulation.
 """
@@ -14,6 +22,7 @@ Requires `docker` on PATH. On Apple Silicon SQL Server runs under amd64 emulatio
 from __future__ import annotations
 
 import csv
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +35,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from rich.console import Console
+
+from _common import EXCLUDED_TABLES, SCHEMA_DIR, snake_case
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -141,17 +152,19 @@ def wait_for_sqlserver(timeout_s: int = 120) -> None:
     raise RuntimeError("SQL Server did not become ready in time")
 
 
-def in_container_sqlcmd(query: str) -> str:
-    r = sh(
-        [
-            "docker", "exec", CONTAINER_NAME,
-            "/opt/mssql-tools18/bin/sqlcmd",
-            "-S", "localhost", "-U", "sa", "-P", SA_PASSWORD,
-            "-C", "-h", "-1", "-W", "-s", "|",
-            "-Q", query,
-        ],
-        capture_output=True,
-    )
+def in_container_sqlcmd(query: str, db: str | None = None) -> str:
+    cmd = [
+        "docker", "exec", CONTAINER_NAME,
+        "/opt/mssql-tools18/bin/sqlcmd",
+        "-S", "localhost", "-U", "sa", "-P", SA_PASSWORD,
+        "-C", "-h", "-1", "-W", "-s", "|",
+    ]
+    if db:
+        # Use -d instead of `USE [db]` so SQL Server doesn't emit the
+        # "Changed database context to ..." line that pollutes parsed output.
+        cmd += ["-d", db]
+    cmd += ["-Q", query]
+    r = sh(cmd, capture_output=True)
     return r.stdout
 
 
@@ -199,22 +212,28 @@ def restore_database() -> None:
 
 def list_tables() -> list[TableRef]:
     out = in_container_sqlcmd(
-        f"USE [{DB_NAME}]; "
         "SET NOCOUNT ON; "
         "SELECT TABLE_SCHEMA + '.' + TABLE_NAME "
         "FROM INFORMATION_SCHEMA.TABLES "
         "WHERE TABLE_TYPE='BASE TABLE' "
         "AND TABLE_NAME NOT LIKE 'sys%' "
-        "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+        "ORDER BY TABLE_SCHEMA, TABLE_NAME",
+        db=DB_NAME,
     )
     tables: list[TableRef] = []
+    skipped: list[str] = []
     for line in out.splitlines():
         line = line.strip()
         if not line or "." not in line or line.startswith("-"):
             continue
         schema, name = line.split(".", 1)
+        if name in EXCLUDED_TABLES:
+            skipped.append(name)
+            continue
         tables.append(TableRef(schema=schema, name=name))
     console.print(f"[green]✓[/green] Found {len(tables)} tables")
+    if skipped:
+        console.print(f"[dim]  excluded: {', '.join(skipped)}[/dim]")
     return tables
 
 
@@ -228,7 +247,10 @@ def bcp_table(table: TableRef) -> Path:
             "/opt/mssql-tools18/bin/bcp",
             f"[{DB_NAME}].{table.fq}", "out", container_path,
             "-S", "localhost", "-U", "sa", "-P", SA_PASSWORD,
-            "-C", "-c", "-t|", "-r\n", "-k",
+            # -u = trust server certificate (bcp 18 equivalent of sqlcmd's -C).
+            # -c = character format, -t = field terminator, -r = row terminator,
+            # -k = keep NULLs.
+            "-u", "-c", "-t|", "-r\n", "-k",
         ],
         capture_output=True,
     )
@@ -238,20 +260,65 @@ def bcp_table(table: TableRef) -> Path:
     return host_path
 
 
-def column_names(table: TableRef) -> list[str]:
+def _nullable(v: str) -> int | None:
+    return None if v.upper() == "NULL" or not v else int(v)
+
+
+def table_columns(table: TableRef) -> list[dict]:
+    """Authoritative column metadata straight from INFORMATION_SCHEMA.
+
+    Carries both the source identifier and its snake_case form so the loader
+    never has to re-derive the mapping, and so the transformation is auditable
+    in a checked-in artifact.
+    """
     out = in_container_sqlcmd(
-        f"USE [{DB_NAME}]; SET NOCOUNT ON; "
-        f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+        "SET NOCOUNT ON; "
+        "SELECT COLUMN_NAME, DATA_TYPE, "
+        "ISNULL(CAST(CHARACTER_MAXIMUM_LENGTH AS VARCHAR), 'NULL'), "
+        "ISNULL(CAST(NUMERIC_PRECISION AS VARCHAR), 'NULL'), "
+        "ISNULL(CAST(NUMERIC_SCALE AS VARCHAR), 'NULL'), "
+        "IS_NULLABLE "
+        "FROM INFORMATION_SCHEMA.COLUMNS "
         f"WHERE TABLE_SCHEMA = '{table.schema}' AND TABLE_NAME = '{table.name}' "
-        f"ORDER BY ORDINAL_POSITION"
+        "ORDER BY ORDINAL_POSITION",
+        db=DB_NAME,
     )
-    cols = [line.strip() for line in out.splitlines() if line.strip() and not line.startswith("-")]
+    cols: list[dict] = []
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("-") or "|" not in line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 6:
+            continue
+        name, sql_type, char_len, precision, scale, is_nullable = parts[:6]
+        cols.append({
+            "source_name": name,
+            "name": snake_case(name),
+            "sql_type": sql_type.lower(),
+            "max_length": _nullable(char_len),
+            "precision": _nullable(precision),
+            "scale": _nullable(scale),
+            "nullable": is_nullable.upper() == "YES",
+        })
     return cols
 
 
-def pipe_to_csv(table: TableRef, pipe_path: Path) -> Path:
+def write_schema(table: TableRef, columns: list[dict]) -> Path:
+    """Persist column metadata to schemas/<Table>.json for the loader to pin."""
+    SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
+    path = SCHEMA_DIR / f"{table.name}.json"
+    path.write_text(json.dumps({
+        "source_table": f"{table.schema}.{table.name}",
+        "table": snake_case(table.name),
+        "columns": columns,
+    }, indent=2) + "\n")
+    return path
+
+
+def pipe_to_csv(table: TableRef, columns: list[dict], pipe_path: Path) -> Path:
     """Convert pipe-delimited bcp output to proper CSV with header + quoting."""
-    cols = column_names(table)
+    cols = [c["source_name"] for c in columns]
     csv_path = DATA_DIR / table.filename
     with open(pipe_path, "r", encoding="utf-8", errors="replace", newline="") as src, \
             open(csv_path, "w", encoding="utf-8", newline="") as dst:
@@ -267,8 +334,27 @@ def pipe_to_csv(table: TableRef, pipe_path: Path) -> Path:
     return csv_path
 
 
+def verify_csv(csv_path: Path, expected_cols: int) -> tuple[int, int]:
+    """Return (rows, ragged_rows) by actually parsing the CSV.
+
+    Counting raw lines would overreport any table whose text columns contain
+    embedded newlines, and would hide the fact that bcp's unquoted character
+    format had split records mid-row.
+    """
+    rows = ragged = 0
+    with open(csv_path, newline="", encoding="utf-8", errors="replace") as fh:
+        reader = csv.reader(fh)
+        next(reader, None)
+        for row in reader:
+            rows += 1
+            if len(row) != expected_cols:
+                ragged += 1
+    return rows, ragged
+
+
 def main() -> None:
     download_bak()
+    problems: list[str] = []
     with sqlserver_container():
         restore_database()
         tables = list_tables()
@@ -276,14 +362,30 @@ def main() -> None:
         RAW_DIR.mkdir(parents=True, exist_ok=True)
         for i, table in enumerate(tables, 1):
             console.print(f"[cyan]({i}/{len(tables)}) exporting[/cyan] {table.fq}")
+            columns = table_columns(table)
+            write_schema(table, columns)
             pipe_path = bcp_table(table)
-            csv_path = pipe_to_csv(table, pipe_path)
-            rows = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
-            console.print(f"  → {csv_path.name}  ({rows:,} rows)")
+            csv_path = pipe_to_csv(table, columns, pipe_path)
+            rows, ragged = verify_csv(csv_path, len(columns))
+            if ragged:
+                problems.append(f"{table.name}: {ragged:,} of {rows:,} rows malformed")
+                console.print(
+                    f"  → {csv_path.name}  [red]{rows:,} rows, {ragged:,} malformed[/red]"
+                )
+            else:
+                console.print(f"  → {csv_path.name}  ({rows:,} rows)")
     # Cleanup pipe intermediates.
     if RAW_DIR.exists():
         shutil.rmtree(RAW_DIR)
-    console.print(f"[bold green]Done.[/bold green] CSVs in {DATA_DIR}")
+
+    console.print(f"[bold green]Done.[/bold green] CSVs in {DATA_DIR}, schemas in {SCHEMA_DIR}")
+    if problems:
+        console.print(
+            "\n[bold red]Malformed extracts[/bold red] — bcp character format cannot "
+            "round-trip embedded newlines. Exclude these tables or export them differently:"
+        )
+        for p in problems:
+            console.print(f"  [red]•[/red] {p}")
 
 
 if __name__ == "__main__":

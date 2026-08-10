@@ -1,0 +1,33 @@
+{
+  "source_table": "dbo.FactAdditionalInternationalProductDescription",
+  "table": "fact_additional_international_product_description",
+  "columns": [
+    {
+      "source_name": "ProductKey",
+      "name": "product_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CultureName",
+      "name": "culture_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductDescription",
+      "name": "product_description",
+      "sql_type": "nvarchar",
+      "max_length": -1,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    }
+  ]
+}

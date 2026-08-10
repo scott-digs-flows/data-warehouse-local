@@ -1,0 +1,285 @@
+{
+  "source_table": "dbo.DimEmployee",
+  "table": "dim_employee",
+  "columns": [
+    {
+      "source_name": "EmployeeKey",
+      "name": "employee_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ParentEmployeeKey",
+      "name": "parent_employee_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "EmployeeNationalIDAlternateKey",
+      "name": "employee_national_id_alternate_key",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "ParentEmployeeNationalIDAlternateKey",
+      "name": "parent_employee_national_id_alternate_key",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "SalesTerritoryKey",
+      "name": "sales_territory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "FirstName",
+      "name": "first_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "LastName",
+      "name": "last_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "MiddleName",
+      "name": "middle_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "NameStyle",
+      "name": "name_style",
+      "sql_type": "bit",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "Title",
+      "name": "title",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "HireDate",
+      "name": "hire_date",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "BirthDate",
+      "name": "birth_date",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "LoginID",
+      "name": "login_id",
+      "sql_type": "nvarchar",
+      "max_length": 256,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EmailAddress",
+      "name": "email_address",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Phone",
+      "name": "phone",
+      "sql_type": "nvarchar",
+      "max_length": 25,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "MaritalStatus",
+      "name": "marital_status",
+      "sql_type": "nchar",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EmergencyContactName",
+      "name": "emergency_contact_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EmergencyContactPhone",
+      "name": "emergency_contact_phone",
+      "sql_type": "nvarchar",
+      "max_length": 25,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "SalariedFlag",
+      "name": "salaried_flag",
+      "sql_type": "bit",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Gender",
+      "name": "gender",
+      "sql_type": "nchar",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "PayFrequency",
+      "name": "pay_frequency",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "BaseRate",
+      "name": "base_rate",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": true
+    },
+    {
+      "source_name": "VacationHours",
+      "name": "vacation_hours",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "SickLeaveHours",
+      "name": "sick_leave_hours",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "CurrentFlag",
+      "name": "current_flag",
+      "sql_type": "bit",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesPersonFlag",
+      "name": "sales_person_flag",
+      "sql_type": "bit",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "DepartmentName",
+      "name": "department_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "StartDate",
+      "name": "start_date",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EndDate",
+      "name": "end_date",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Status",
+      "name": "status",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EmployeePhoto",
+      "name": "employee_photo",
+      "sql_type": "varbinary",
+      "max_length": -1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

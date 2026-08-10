@@ -1,0 +1,51 @@
+{
+  "source_table": "dbo.FactCurrencyRate",
+  "table": "fact_currency_rate",
+  "columns": [
+    {
+      "source_name": "CurrencyKey",
+      "name": "currency_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "AverageRate",
+      "name": "average_rate",
+      "sql_type": "float",
+      "max_length": null,
+      "precision": 53,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "EndOfDayRate",
+      "name": "end_of_day_rate",
+      "sql_type": "float",
+      "max_length": null,
+      "precision": 53,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "Date",
+      "name": "date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

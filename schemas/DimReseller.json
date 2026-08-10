@@ -1,0 +1,186 @@
+{
+  "source_table": "dbo.DimReseller",
+  "table": "dim_reseller",
+  "columns": [
+    {
+      "source_name": "ResellerKey",
+      "name": "reseller_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "GeographyKey",
+      "name": "geography_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "ResellerAlternateKey",
+      "name": "reseller_alternate_key",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Phone",
+      "name": "phone",
+      "sql_type": "nvarchar",
+      "max_length": 25,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "BusinessType",
+      "name": "business_type",
+      "sql_type": "varchar",
+      "max_length": 20,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "ResellerName",
+      "name": "reseller_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "NumberEmployees",
+      "name": "number_employees",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "OrderFrequency",
+      "name": "order_frequency",
+      "sql_type": "char",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "OrderMonth",
+      "name": "order_month",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "FirstOrderYear",
+      "name": "first_order_year",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "LastOrderYear",
+      "name": "last_order_year",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "ProductLine",
+      "name": "product_line",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "AddressLine1",
+      "name": "address_line1",
+      "sql_type": "nvarchar",
+      "max_length": 60,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "AddressLine2",
+      "name": "address_line2",
+      "sql_type": "nvarchar",
+      "max_length": 60,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "AnnualSales",
+      "name": "annual_sales",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": true
+    },
+    {
+      "source_name": "BankName",
+      "name": "bank_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "MinPaymentType",
+      "name": "min_payment_type",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "MinPaymentAmount",
+      "name": "min_payment_amount",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": true
+    },
+    {
+      "source_name": "AnnualRevenue",
+      "name": "annual_revenue",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": true
+    },
+    {
+      "source_name": "YearOpened",
+      "name": "year_opened",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    }
+  ]
+}

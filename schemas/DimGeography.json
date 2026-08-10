@@ -1,0 +1,105 @@
+{
+  "source_table": "dbo.DimGeography",
+  "table": "dim_geography",
+  "columns": [
+    {
+      "source_name": "GeographyKey",
+      "name": "geography_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "City",
+      "name": "city",
+      "sql_type": "nvarchar",
+      "max_length": 30,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "StateProvinceCode",
+      "name": "state_province_code",
+      "sql_type": "nvarchar",
+      "max_length": 3,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "StateProvinceName",
+      "name": "state_province_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CountryRegionCode",
+      "name": "country_region_code",
+      "sql_type": "nvarchar",
+      "max_length": 3,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EnglishCountryRegionName",
+      "name": "english_country_region_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "SpanishCountryRegionName",
+      "name": "spanish_country_region_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "FrenchCountryRegionName",
+      "name": "french_country_region_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "PostalCode",
+      "name": "postal_code",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "SalesTerritoryKey",
+      "name": "sales_territory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "IpAddressLocator",
+      "name": "ip_address_locator",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

@@ -1,0 +1,145 @@
+# Engine manifest — the contract between this repo and the BI app.
+#
+# The app reads this file to learn how to reach every engine, which SQL dialect
+# to speak, and how to build a fully-qualified table reference. Adding an engine
+# should mean a compose service plus an entry here — never app code changes.
+#
+# `dialect` values are the exact strings SQLGlot and Ibis expect, so a canonical
+# query can be transpiled per engine.
+#
+# Hosts/ports assume the stack is reached from the host machine. Inside the
+# compose network, substitute the service name and the container-internal port.
+
+version: 1
+
+dataset:
+  warehouse: adventure_works_dw
+  namespace: raw
+  # Identifiers are normalised to snake_case at load time (DimCustomer ->
+  # dim_customer). The CSV extract stays faithful to the SQL Server source;
+  # normalisation is a documented transformation in scripts/load_iceberg.py.
+  identifier_style: snake_case
+  description: >
+    AdventureWorks DW 2022 star schema. Small by design — sized for fast BI app
+    iteration, not for performance measurement.
+
+engines:
+  # ------------------------------------------------------------------
+  # Tier 1 — read Iceberg in place, zero copy
+  # ------------------------------------------------------------------
+  - name: trino
+    tier: iceberg-native
+    dialect: trino
+    driver: trino            # pip install trino
+    dsn: trino://analyst@localhost:8080/iceberg/raw
+    connection:
+      host: localhost
+      port: 8080
+      user: analyst
+      catalog: iceberg
+      schema: raw
+    qualify: 'iceberg.raw."{table}"'
+    identifier_case: lower
+    notes: >
+      Reference Iceberg engine — full read/write, richest Iceberg feature
+      support (time travel, snapshots, schema evolution).
+
+  - name: duckdb-http
+    tier: iceberg-native
+    dialect: duckdb
+    driver: http             # POST {"sql": "..."} to the /query endpoint
+    dsn: http://localhost:8000/query
+    connection:
+      host: localhost
+      port: 8000
+      query_path: /query
+    qualify: 'ice.raw."{table}"'
+    identifier_case: insensitive
+    notes: >
+      DuckDB behind FastAPI, so the app can treat it as a uniform HTTP endpoint
+      like the others. Read-only against the REST catalog in practice.
+
+  - name: duckdb-embedded
+    tier: iceberg-native
+    dialect: duckdb
+    driver: duckdb           # in-process; no server involved
+    dsn: null
+    connection:
+      # Must match the endpoint the REST catalog advertises (it overrides its
+      # own URI to the internal Docker hostname, and object paths follow suit).
+      # SigV4 signs the Host header, so a secret scoped to localhost:9000 cannot
+      # sign a request to minio:9000 — that mismatch returns a bare 403.
+      # Requires the /etc/hosts entries listed in the README.
+      s3_endpoint_host: minio:9000
+      # The app runs these against a local duckdb.connect() before querying.
+      #
+      # Global `SET s3_*` rather than CREATE SECRET, deliberately: a secret is
+      # scoped to s3://, but the Iceberg extension fetches manifest .avro files
+      # over an http:// URL. Those requests fall outside the secret's scope, go
+      # out unsigned, and MinIO answers 403 — while plain s3:// reads succeed,
+      # which makes it look like a permissions problem rather than a scope one.
+      # The global settings apply to both paths. (The containerised DuckDB works
+      # for the same reason: its AWS_* env vars populate these same settings.)
+      attach_sql: |
+        INSTALL iceberg; LOAD iceberg;
+        INSTALL httpfs;  LOAD httpfs;
+        SET s3_endpoint='{s3_endpoint_host}';
+        SET s3_access_key_id='{s3_access_key}';
+        SET s3_secret_access_key='{s3_secret_key}';
+        SET s3_region='{s3_region}';
+        SET s3_url_style='path';
+        SET s3_use_ssl=false;
+        ATTACH '{warehouse}' AS ice (
+            TYPE iceberg, ENDPOINT '{catalog_uri}', AUTHORIZATION_TYPE 'none'
+        );
+    qualify: 'ice.raw."{table}"'
+    identifier_case: insensitive
+    notes: >
+      Same engine as duckdb-http but embedded in the app process — no network
+      hop. This is how a production Dash app would most likely ship DuckDB, so
+      it is worth exercising as a distinct connector shape.
+
+  - name: clickhouse
+    tier: iceberg-native
+    dialect: clickhouse
+    driver: clickhouse-connect
+    dsn: http://localhost:8123
+    connection:
+      host: localhost
+      http_port: 8123
+      native_port: 9010      # remapped; MinIO owns 9000 on the host
+      user: default
+      password: ""
+      database: datalake
+    # ClickHouse flattens the Iceberg namespace into the table name rather
+    # than nesting it, so the namespace is part of the quoted identifier.
+    qualify: 'datalake."raw.{table}"'
+    identifier_case: sensitive
+    notes: >
+      Reads Iceberg via DataLakeCatalog. Read-only. The most idiosyncratic SQL
+      dialect here — a good stress test for the app's dialect layer.
+
+  # ------------------------------------------------------------------
+  # Tier 2 — requires a synced copy (see scripts/sync_postgres.py)
+  # ------------------------------------------------------------------
+  - name: postgres
+    tier: copy
+    dialect: postgres
+    driver: psycopg
+    dsn: postgresql://lakekeeper:lakekeeper@localhost:5432/analytics
+    connection:
+      host: localhost
+      port: 5432
+      user: lakekeeper
+      password: lakekeeper
+      database: analytics
+      schema: raw
+    qualify: 'raw."{table}"'
+    identifier_case: lower
+    sync:
+      strategy: full-refresh
+      command: uv run python scripts/sync_postgres.py
+    notes: >
+      Cannot read Iceberg natively — holds a synced copy. Present as the
+      ubiquitous OLTP baseline every BI tool must support, and as the concrete
+      illustration of the copy-vs-zero-copy tradeoff.

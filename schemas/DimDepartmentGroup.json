@@ -1,0 +1,33 @@
+{
+  "source_table": "dbo.DimDepartmentGroup",
+  "table": "dim_department_group",
+  "columns": [
+    {
+      "source_name": "DepartmentGroupKey",
+      "name": "department_group_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ParentDepartmentGroupKey",
+      "name": "parent_department_group_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "DepartmentGroupName",
+      "name": "department_group_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

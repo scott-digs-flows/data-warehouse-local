@@ -1,0 +1,60 @@
+{
+  "source_table": "dbo.NewFactCurrencyRate",
+  "table": "new_fact_currency_rate",
+  "columns": [
+    {
+      "source_name": "AverageRate",
+      "name": "average_rate",
+      "sql_type": "real",
+      "max_length": null,
+      "precision": 24,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CurrencyID",
+      "name": "currency_id",
+      "sql_type": "nvarchar",
+      "max_length": 3,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CurrencyDate",
+      "name": "currency_date",
+      "sql_type": "date",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EndOfDayRate",
+      "name": "end_of_day_rate",
+      "sql_type": "real",
+      "max_length": null,
+      "precision": 24,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CurrencyKey",
+      "name": "currency_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    }
+  ]
+}

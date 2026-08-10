@@ -1,0 +1,17 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- The Iceberg catalog database engine is still gated behind an
+                 experimental flag in 26.x. -->
+            <allow_experimental_database_iceberg>1</allow_experimental_database_iceberg>
+
+            <!-- ClickHouse refuses to use the server's own S3 credentials for
+                 user queries unless this is set. The alternative is embedding
+                 the MinIO key/secret in the DataLakeCatalog DDL, which would
+                 put credentials in SQL and in `SHOW CREATE DATABASE` output.
+                 Server-side config (config.d/s3.xml) is the better place, so we
+                 opt in here instead. -->
+            <s3_allow_server_credentials_in_user_queries>1</s3_allow_server_credentials_in_user_queries>
+        </default>
+    </profiles>
+</clickhouse>

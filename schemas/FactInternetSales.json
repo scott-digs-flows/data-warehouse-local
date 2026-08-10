@@ -1,0 +1,240 @@
+{
+  "source_table": "dbo.FactInternetSales",
+  "table": "fact_internet_sales",
+  "columns": [
+    {
+      "source_name": "ProductKey",
+      "name": "product_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "OrderDateKey",
+      "name": "order_date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DueDateKey",
+      "name": "due_date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ShipDateKey",
+      "name": "ship_date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CustomerKey",
+      "name": "customer_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "PromotionKey",
+      "name": "promotion_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CurrencyKey",
+      "name": "currency_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesTerritoryKey",
+      "name": "sales_territory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesOrderNumber",
+      "name": "sales_order_number",
+      "sql_type": "nvarchar",
+      "max_length": 20,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesOrderLineNumber",
+      "name": "sales_order_line_number",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "RevisionNumber",
+      "name": "revision_number",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "OrderQuantity",
+      "name": "order_quantity",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "UnitPrice",
+      "name": "unit_price",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "ExtendedAmount",
+      "name": "extended_amount",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "UnitPriceDiscountPct",
+      "name": "unit_price_discount_pct",
+      "sql_type": "float",
+      "max_length": null,
+      "precision": 53,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "DiscountAmount",
+      "name": "discount_amount",
+      "sql_type": "float",
+      "max_length": null,
+      "precision": 53,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductStandardCost",
+      "name": "product_standard_cost",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "TotalProductCost",
+      "name": "total_product_cost",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesAmount",
+      "name": "sales_amount",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "TaxAmt",
+      "name": "tax_amt",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "Freight",
+      "name": "freight",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "CarrierTrackingNumber",
+      "name": "carrier_tracking_number",
+      "sql_type": "nvarchar",
+      "max_length": 25,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "CustomerPONumber",
+      "name": "customer_po_number",
+      "sql_type": "nvarchar",
+      "max_length": 25,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "OrderDate",
+      "name": "order_date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "DueDate",
+      "name": "due_date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "ShipDate",
+      "name": "ship_date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

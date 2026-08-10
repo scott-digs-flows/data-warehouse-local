@@ -1,0 +1,24 @@
+{
+  "source_table": "dbo.AdventureWorksDWBuildVersion",
+  "table": "adventure_works_dw_build_version",
+  "columns": [
+    {
+      "source_name": "DBVersion",
+      "name": "db_version",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "VersionDate",
+      "name": "version_date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

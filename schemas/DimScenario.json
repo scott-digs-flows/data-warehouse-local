@@ -1,0 +1,24 @@
+{
+  "source_table": "dbo.DimScenario",
+  "table": "dim_scenario",
+  "columns": [
+    {
+      "source_name": "ScenarioKey",
+      "name": "scenario_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ScenarioName",
+      "name": "scenario_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

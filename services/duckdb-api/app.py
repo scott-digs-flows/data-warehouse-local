@@ -56,7 +56,10 @@ def setup_duckdb() -> duckdb.DuckDBPyConnection:
         f"""
         ATTACH '{os.environ["ICEBERG_WAREHOUSE"]}' AS {CATALOG_ALIAS} (
             TYPE iceberg,
-            ENDPOINT '{os.environ["ICEBERG_CATALOG_URI"]}'
+            ENDPOINT '{os.environ["ICEBERG_CATALOG_URI"]}',
+            -- Lakekeeper runs with auth disabled locally. Without this, the
+            -- iceberg extension defaults to oauth2 and refuses to attach.
+            AUTHORIZATION_TYPE 'none'
         )
         """
     )

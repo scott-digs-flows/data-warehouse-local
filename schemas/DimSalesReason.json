@@ -1,0 +1,42 @@
+{
+  "source_table": "dbo.DimSalesReason",
+  "table": "dim_sales_reason",
+  "columns": [
+    {
+      "source_name": "SalesReasonKey",
+      "name": "sales_reason_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesReasonAlternateKey",
+      "name": "sales_reason_alternate_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesReasonName",
+      "name": "sales_reason_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesReasonReasonType",
+      "name": "sales_reason_reason_type",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    }
+  ]
+}

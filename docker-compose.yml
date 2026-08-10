@@ -1,44 +1,34 @@
-# Local data warehouse stack.
+# Local lakehouse stack backing the BI-app POC.
+#
+# One Iceberg lake (MinIO + Lakekeeper), several engines reading it:
+#   Trino / DuckDB / ClickHouse read Iceberg in place (zero copy).
+#   Postgres receives a synced copy (see scripts/sync_postgres.py).
 #
 # Profiles:
-#   default       -> minio, postgres, lakekeeper (everything loaders need)
-#   engines       -> trino, duckdb-api
-#   druid         -> zookeeper + druid stack
-#   all           -> shorthand to spin up everything
+#   default   -> minio, postgres, lakekeeper  (everything the loader needs)
+#   engines    -> trino, duckdb-api, clickhouse
+#   all        -> shorthand for everything
 #
 # Examples:
-#   docker compose up -d                       # core only (catalog + storage)
-#   docker compose --profile engines up -d     # core + Trino + DuckDB API
-#   docker compose --profile druid up -d       # core + Druid
-#   docker compose --profile all up -d         # everything
-
-x-druid-common: &druid-common
-  image: apache/druid:31.0.1
-  env_file:
-    - ./services/druid/environment
-  depends_on:
-    zookeeper:
-      condition: service_started
-    postgres:
-      condition: service_healthy
-    minio-init:
-      condition: service_completed_successfully
-  networks: [warehouse-net]
+#   docker compose up -d                        # lake only
+#   docker compose --profile engines up -d      # lake + query engines
+#
+# All credentials come from .env — see .env.example. Nothing is hardcoded here.
 
 services:
   # ============================================================
   # Object storage (MinIO, S3-compatible)
   # ============================================================
   minio:
-    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: minio
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     volumes:
       - minio_data:/data
     healthcheck:
@@ -63,7 +53,9 @@ services:
     networks: [warehouse-net]
 
   # ============================================================
-  # Postgres (backs Lakekeeper catalog metadata + Druid metadata)
+  # Postgres
+  #   db `lakekeeper` -> Iceberg catalog metadata
+  #   db `analytics`  -> synced copy of the lake (Tier-2 engine)
   # ============================================================
   postgres:
     image: postgres:16
@@ -72,9 +64,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-lakekeeper}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lakekeeper}
       POSTGRES_DB: postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./services/lakekeeper/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./services/postgres/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lakekeeper}"]
       interval: 5s
@@ -86,7 +80,7 @@ services:
   # Lakekeeper Iceberg REST catalog
   # ============================================================
   lakekeeper-migrate:
-    image: &lakekeeper-image quay.io/lakekeeper/catalog:latest-main
+    image: &lakekeeper-image quay.io/lakekeeper/catalog:v0.13.1
     container_name: lakekeeper-migrate
     depends_on:
       postgres:
@@ -111,7 +105,7 @@ services:
     environment: *lakekeeper-env
     command: ["serve"]
     ports:
-      - "8181:8181"
+      - "${LAKEKEEPER_PORT:-8181}:8181"
     healthcheck:
       test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
       interval: 5s
@@ -119,20 +113,30 @@ services:
       retries: 20
     networks: [warehouse-net]
 
+  # Bootstraps the server and creates the warehouse. The warehouse payload is a
+  # template rendered with envsubst so credentials live only in .env.
   lakekeeper-bootstrap:
-    image: curlimages/curl:8.11.0
+    image: alpine:3.21
     container_name: lakekeeper-bootstrap
     depends_on:
       lakekeeper:
         condition: service_healthy
+    environment:
+      LAKEKEEPER_URL: http://lakekeeper:8181
+      MINIO_BUCKET: ${MINIO_BUCKET:-warehouse}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
+      S3_REGION: ${ICEBERG_S3_REGION:-us-east-1}
     volumes:
       - ./services/lakekeeper/bootstrap.sh:/bootstrap.sh:ro
-      - ./services/lakekeeper/create-warehouse.json:/create-warehouse.json:ro
+      - ./services/lakekeeper/create-warehouse.json.tmpl:/create-warehouse.json.tmpl:ro
     entrypoint: ["sh", "/bootstrap.sh"]
     networks: [warehouse-net]
 
   # ============================================================
-  # Trino (engines profile)
+  # Trino — Tier 1, reads Iceberg in place
   # ============================================================
   trino:
     image: trinodb/trino:466
@@ -143,12 +147,21 @@ services:
         condition: service_healthy
     ports:
       - "${TRINO_PORT:-8080}:8080"
+    environment:
+      # Consumed by catalog/iceberg.properties via ${ENV:...} substitution.
+      LAKEKEEPER_CATALOG_URI: http://lakekeeper:8181/catalog
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
+      S3_REGION: ${ICEBERG_S3_REGION:-us-east-1}
     volumes:
       - ./services/trino/catalog:/etc/trino/catalog:ro
     networks: [warehouse-net]
 
   # ============================================================
-  # DuckDB FastAPI (engines profile)
+  # DuckDB over HTTP — Tier 1, reads Iceberg in place
+  # (The BI app can also embed DuckDB in-process; see engines.yaml.)
   # ============================================================
   duckdb-api:
     build:
@@ -163,89 +176,75 @@ services:
       - "${DUCKDB_API_PORT:-8000}:8000"
     environment:
       ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
-      ICEBERG_WAREHOUSE: ${LAKEKEEPER_WAREHOUSE:-adventure_works_dw}
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-admin}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-admin12345}
       S3_ENDPOINT: http://minio:9000
-      AWS_REGION: us-east-1
+      AWS_REGION: ${ICEBERG_S3_REGION:-us-east-1}
     networks: [warehouse-net]
 
   # ============================================================
-  # Druid (druid profile)
+  # ClickHouse — Tier 1, reads Iceberg in place via DataLakeCatalog
+  # Native protocol is remapped to 9010 on the host; MinIO owns 9000.
   # ============================================================
-  zookeeper:
-    image: zookeeper:3.9
-    container_name: zookeeper
-    profiles: [druid, all]
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.7.3.19
+    container_name: clickhouse
+    profiles: [engines, all]
+    depends_on:
+      lakekeeper-bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
+      - "${CLICKHOUSE_NATIVE_PORT:-9010}:9000"
     environment:
-      ZOO_MY_ID: 1
+      CLICKHOUSE_SKIP_USER_SETUP: "1"
+      ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:-warehouse}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-admin12345}
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./services/clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./services/clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     networks: [warehouse-net]
 
-  druid-coordinator:
-    <<: *druid-common
-    container_name: druid-coordinator
-    profiles: [druid, all]
-    command: ["coordinator"]
-    ports:
-      - "${DRUID_COORDINATOR_PORT:-8081}:8081"
+  # Attaches the Iceberg REST catalog. One-shot, idempotent, runs every `up`.
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:26.7.3.19
+    container_name: clickhouse-init
+    profiles: [engines, all]
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      lakekeeper-bootstrap:
+        condition: service_completed_successfully
+    environment:
+      CLICKHOUSE_HOST: clickhouse
+      ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
+      ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:-warehouse}
     volumes:
-      - druid_coordinator_var:/opt/druid/var
-      - druid_shared:/opt/shared
-
-  druid-broker:
-    <<: *druid-common
-    container_name: druid-broker
-    profiles: [druid, all]
-    command: ["broker"]
-    ports:
-      - "8082:8082"
-    volumes:
-      - druid_broker_var:/opt/druid/var
-      - druid_shared:/opt/shared
-
-  druid-historical:
-    <<: *druid-common
-    container_name: druid-historical
-    profiles: [druid, all]
-    command: ["historical"]
-    ports:
-      - "8083:8083"
-    volumes:
-      - druid_historical_var:/opt/druid/var
-      - druid_shared:/opt/shared
-
-  druid-middlemanager:
-    <<: *druid-common
-    container_name: druid-middlemanager
-    profiles: [druid, all]
-    command: ["middleManager"]
-    ports:
-      - "8091:8091"
-      - "8100-8105:8100-8105"
-    volumes:
-      - druid_middle_var:/opt/druid/var
-      - druid_shared:/opt/shared
-
-  druid-router:
-    <<: *druid-common
-    container_name: druid-router
-    profiles: [druid, all]
-    command: ["router"]
-    ports:
-      - "${DRUID_ROUTER_PORT:-8888}:8888"
-    volumes:
-      - druid_router_var:/opt/druid/var
-      - druid_shared:/opt/shared
+      - ./services/clickhouse/attach-catalog.sh:/attach-catalog.sh:ro
+    entrypoint: ["bash", "/attach-catalog.sh"]
+    networks: [warehouse-net]
 
 volumes:
   minio_data:
   postgres_data:
-  druid_coordinator_var:
-  druid_broker_var:
-  druid_historical_var:
-  druid_middle_var:
-  druid_router_var:
-  druid_shared:
+  clickhouse_data:
 
 networks:
   warehouse-net:

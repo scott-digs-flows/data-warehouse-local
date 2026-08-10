@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- The base image ships <listen_host>::1</listen_host> (loopback only), so
+         nothing outside the container can connect — including the host and the
+         clickhouse-init service. Listen on all interfaces instead.
+
+         Safe here because the container is only published to localhost. -->
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>

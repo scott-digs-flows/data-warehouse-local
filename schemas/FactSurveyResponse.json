@@ -1,0 +1,78 @@
+{
+  "source_table": "dbo.FactSurveyResponse",
+  "table": "fact_survey_response",
+  "columns": [
+    {
+      "source_name": "SurveyResponseKey",
+      "name": "survey_response_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CustomerKey",
+      "name": "customer_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductCategoryKey",
+      "name": "product_category_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "EnglishProductCategoryName",
+      "name": "english_product_category_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductSubcategoryKey",
+      "name": "product_subcategory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "EnglishProductSubcategoryName",
+      "name": "english_product_subcategory_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "Date",
+      "name": "date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

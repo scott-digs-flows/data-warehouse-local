@@ -1,0 +1,60 @@
+{
+  "source_table": "dbo.DimProductSubcategory",
+  "table": "dim_product_subcategory",
+  "columns": [
+    {
+      "source_name": "ProductSubcategoryKey",
+      "name": "product_subcategory_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductSubcategoryAlternateKey",
+      "name": "product_subcategory_alternate_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "EnglishProductSubcategoryName",
+      "name": "english_product_subcategory_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "SpanishProductSubcategoryName",
+      "name": "spanish_product_subcategory_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "FrenchProductSubcategoryName",
+      "name": "french_product_subcategory_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": false
+    },
+    {
+      "source_name": "ProductCategoryKey",
+      "name": "product_category_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    }
+  ]
+}

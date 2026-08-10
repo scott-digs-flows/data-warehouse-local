@@ -1,0 +1,20 @@
+{
+  "warehouse-name": "${ICEBERG_WAREHOUSE}",
+  "project-id": "00000000-0000-0000-0000-000000000000",
+  "storage-profile": {
+    "type": "s3",
+    "bucket": "${MINIO_BUCKET}",
+    "key-prefix": "${ICEBERG_WAREHOUSE}",
+    "endpoint": "${MINIO_ENDPOINT}",
+    "region": "${S3_REGION}",
+    "path-style-access": true,
+    "flavor": "s3-compat",
+    "sts-enabled": false
+  },
+  "storage-credential": {
+    "type": "s3",
+    "credential-type": "access-key",
+    "access-key-id": "${MINIO_ROOT_USER}",
+    "secret-access-key": "${MINIO_ROOT_PASSWORD}"
+  }
+}

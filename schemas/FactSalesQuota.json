@@ -1,0 +1,69 @@
+{
+  "source_table": "dbo.FactSalesQuota",
+  "table": "fact_sales_quota",
+  "columns": [
+    {
+      "source_name": "SalesQuotaKey",
+      "name": "sales_quota_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "EmployeeKey",
+      "name": "employee_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "DateKey",
+      "name": "date_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CalendarYear",
+      "name": "calendar_year",
+      "sql_type": "smallint",
+      "max_length": null,
+      "precision": 5,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "CalendarQuarter",
+      "name": "calendar_quarter",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "SalesAmountQuota",
+      "name": "sales_amount_quota",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": false
+    },
+    {
+      "source_name": "Date",
+      "name": "date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    }
+  ]
+}

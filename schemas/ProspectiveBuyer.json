@@ -1,0 +1,222 @@
+{
+  "source_table": "dbo.ProspectiveBuyer",
+  "table": "prospective_buyer",
+  "columns": [
+    {
+      "source_name": "ProspectiveBuyerKey",
+      "name": "prospective_buyer_key",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": false
+    },
+    {
+      "source_name": "ProspectAlternateKey",
+      "name": "prospect_alternate_key",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "FirstName",
+      "name": "first_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "MiddleName",
+      "name": "middle_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "LastName",
+      "name": "last_name",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "BirthDate",
+      "name": "birth_date",
+      "sql_type": "datetime",
+      "max_length": null,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "MaritalStatus",
+      "name": "marital_status",
+      "sql_type": "nchar",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Gender",
+      "name": "gender",
+      "sql_type": "nvarchar",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "EmailAddress",
+      "name": "email_address",
+      "sql_type": "nvarchar",
+      "max_length": 50,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "YearlyIncome",
+      "name": "yearly_income",
+      "sql_type": "money",
+      "max_length": null,
+      "precision": 19,
+      "scale": 4,
+      "nullable": true
+    },
+    {
+      "source_name": "TotalChildren",
+      "name": "total_children",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "NumberChildrenAtHome",
+      "name": "number_children_at_home",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "Education",
+      "name": "education",
+      "sql_type": "nvarchar",
+      "max_length": 40,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Occupation",
+      "name": "occupation",
+      "sql_type": "nvarchar",
+      "max_length": 100,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "HouseOwnerFlag",
+      "name": "house_owner_flag",
+      "sql_type": "nchar",
+      "max_length": 1,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "NumberCarsOwned",
+      "name": "number_cars_owned",
+      "sql_type": "tinyint",
+      "max_length": null,
+      "precision": 3,
+      "scale": 0,
+      "nullable": true
+    },
+    {
+      "source_name": "AddressLine1",
+      "name": "address_line1",
+      "sql_type": "nvarchar",
+      "max_length": 120,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "AddressLine2",
+      "name": "address_line2",
+      "sql_type": "nvarchar",
+      "max_length": 120,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "City",
+      "name": "city",
+      "sql_type": "nvarchar",
+      "max_length": 30,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "StateProvinceCode",
+      "name": "state_province_code",
+      "sql_type": "nvarchar",
+      "max_length": 3,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "PostalCode",
+      "name": "postal_code",
+      "sql_type": "nvarchar",
+      "max_length": 15,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Phone",
+      "name": "phone",
+      "sql_type": "nvarchar",
+      "max_length": 20,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Salutation",
+      "name": "salutation",
+      "sql_type": "nvarchar",
+      "max_length": 8,
+      "precision": null,
+      "scale": null,
+      "nullable": true
+    },
+    {
+      "source_name": "Unknown",
+      "name": "unknown",
+      "sql_type": "int",
+      "max_length": null,
+      "precision": 10,
+      "scale": 0,
+      "nullable": true
+    }
+  ]
+}

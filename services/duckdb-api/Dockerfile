@@ -7,7 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN pip install --no-cache-dir \
-        "duckdb>=1.2.0" \
+        "duckdb==1.5.5" \
         "fastapi>=0.115.0" \
         "uvicorn[standard]>=0.32.0" \
         "pydantic>=2.9.0"
