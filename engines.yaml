@@ -103,21 +103,36 @@ engines:
     tier: iceberg-native
     dialect: clickhouse
     driver: clickhouse-connect
-    dsn: http://localhost:8123
+    dsn: clickhouse+http://default:clickhouse@localhost:8123
     connection:
       host: localhost
       http_port: 8123
       native_port: 9010      # remapped; MinIO owns 9000 on the host
+      # Postgres wire-protocol emulation. Lets GUI clients connect with a
+      # Postgres driver when clickhouse-jdbc misbehaves (see README gotchas).
+      # Partial emulation — fine for queries, not for full introspection.
+      pgwire_port: 9005
       user: default
-      password: ""
-      database: datalake
-    # ClickHouse flattens the Iceberg namespace into the table name rather
-    # than nesting it, so the namespace is part of the quoted identifier.
-    qualify: 'datalake."raw.{table}"'
+      # Non-blank on purpose: with an empty password some JDBC clients send
+      # both `Authorization: Basic` and `X-ClickHouse-User/Key`, which
+      # ClickHouse rejects with Code 516.
+      password: clickhouse
+      database: raw
+    # `raw` holds pass-through views created by scripts/create_clickhouse_views.py.
+    # The direct catalog reference is datalake."raw.{table}" — ClickHouse folds the
+    # Iceberg namespace into the table name, giving a dot inside a quoted
+    # identifier that GUI tools mangle, and DataLakeCatalog tables never appear in
+    # system.tables so nothing can introspect them. The views fix both and cost
+    # nothing (no data copy).
+    qualify: 'raw."{table}"'
     identifier_case: sensitive
     notes: >
-      Reads Iceberg via DataLakeCatalog. Read-only. The most idiosyncratic SQL
-      dialect here — a good stress test for the app's dialect layer.
+      Reads Iceberg via DataLakeCatalog. Writes are possible but beta-gated:
+      INSERT and ALTER ... DELETE work with allow_insert_into_iceberg=1 and
+      produce real Iceberg snapshots that Trino reads correctly — but PyIceberg
+      cannot read ClickHouse-written data files ("missing field-id"). Treat as
+      read-only unless every reader is known to tolerate it. The most
+      idiosyncratic SQL dialect here — a good stress test for the dialect layer.
 
   # ------------------------------------------------------------------
   # Tier 2 — requires a synced copy (see scripts/sync_postgres.py)

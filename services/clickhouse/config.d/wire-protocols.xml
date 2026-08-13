@@ -1,0 +1,13 @@
+<clickhouse>
+    <!-- PostgreSQL wire-protocol emulation.
+         Lets any Postgres client (DBeaver, psql, psycopg) talk to ClickHouse,
+         which sidesteps the clickhouse-jdbc driver entirely — useful because
+         that driver can emit both `Authorization: Basic` and `X-ClickHouse-User`
+         headers at once, which ClickHouse rejects with Code 516 and offers no
+         server-side setting to relax.
+
+         Emulation is partial: DML and most SELECTs work, but some client
+         introspection queries will not. Treat it as a GUI escape hatch, not as
+         the primary interface. -->
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>

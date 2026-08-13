@@ -5,13 +5,20 @@
 #   Postgres receives a synced copy (see scripts/sync_postgres.py).
 #
 # Profiles:
-#   default   -> minio, postgres, lakekeeper  (everything the loader needs)
-#   engines    -> trino, duckdb-api, clickhouse
+#   (none)     -> minio, postgres, lakekeeper — the lake. Always started.
+#   trino      -> + Trino
+#   duckdb     -> + DuckDB HTTP API
+#   clickhouse -> + ClickHouse (and its catalog attach)
+#   engines    -> + all three at once
 #   all        -> shorthand for everything
 #
+# Each engine belongs to its own profile *and* to `engines`, so you can run one
+# engine without paying for the others.
+#
 # Examples:
-#   docker compose up -d                        # lake only
-#   docker compose --profile engines up -d      # lake + query engines
+#   docker compose up -d                          # lake only
+#   docker compose --profile clickhouse up -d     # lake + ClickHouse only
+#   docker compose --profile engines up -d        # lake + every engine
 #
 # All credentials come from .env — see .env.example. Nothing is hardcoded here.
 
@@ -141,7 +148,7 @@ services:
   trino:
     image: trinodb/trino:466
     container_name: trino
-    profiles: [engines, all]
+    profiles: [trino, engines, all]
     depends_on:
       lakekeeper:
         condition: service_healthy
@@ -168,7 +175,7 @@ services:
       context: ./services/duckdb-api
     image: duckdb-api:local
     container_name: duckdb-api
-    profiles: [engines, all]
+    profiles: [duckdb, engines, all]
     depends_on:
       lakekeeper:
         condition: service_healthy
@@ -190,15 +197,17 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:26.7.3.19
     container_name: clickhouse
-    profiles: [engines, all]
+    profiles: [clickhouse, engines, all]
     depends_on:
       lakekeeper-bootstrap:
         condition: service_completed_successfully
     ports:
       - "${CLICKHOUSE_HTTP_PORT:-8123}:8123"
       - "${CLICKHOUSE_NATIVE_PORT:-9010}:9000"
+      - "${CLICKHOUSE_PGWIRE_PORT:-9005}:9005"
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: "1"
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
       ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
       ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
       MINIO_ENDPOINT: http://minio:9000
@@ -224,7 +233,7 @@ services:
   clickhouse-init:
     image: clickhouse/clickhouse-server:26.7.3.19
     container_name: clickhouse-init
-    profiles: [engines, all]
+    profiles: [clickhouse, engines, all]
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -232,6 +241,8 @@ services:
         condition: service_completed_successfully
     environment:
       CLICKHOUSE_HOST: clickhouse
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
       ICEBERG_CATALOG_URI: http://lakekeeper:8181/catalog
       ICEBERG_WAREHOUSE: ${ICEBERG_WAREHOUSE:-adventure_works_dw}
       MINIO_ENDPOINT: http://minio:9000

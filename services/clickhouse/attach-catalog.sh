@@ -14,7 +14,8 @@ set -euo pipefail
 
 echo "--> attaching Iceberg catalog '${ICEBERG_WAREHOUSE}' to ClickHouse"
 
-clickhouse-client --host "${CLICKHOUSE_HOST:-clickhouse}" -n --query "
+clickhouse-client --host "${CLICKHOUSE_HOST:-clickhouse}" \
+    --user "${CLICKHOUSE_USER:-default}" --password "${CLICKHOUSE_PASSWORD}" -n --query "
     SET allow_experimental_database_iceberg = 1;
 
     CREATE DATABASE IF NOT EXISTS datalake

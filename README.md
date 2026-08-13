@@ -107,6 +107,41 @@ Expected final output:
 ✓ All engines agree on the aggregate (10 territory groups, sums matched to 2dp)
 ```
 
+### Running just one engine
+
+Every engine has its own profile as well as `engines`, so you only pay for what
+you use. The lake services carry no profile and always start.
+
+```bash
+docker compose --profile clickhouse up -d   # lake + ClickHouse only  (4 containers, ~1.0 GB)
+docker compose --profile trino up -d        # lake + Trino only
+docker compose --profile duckdb up -d       # lake + DuckDB HTTP only
+docker compose --profile engines up -d      # lake + all three        (6 containers, ~2.1 GB)
+```
+
+Restrict the smoke test to match:
+
+```bash
+uv run python scripts/smoke_test.py --engine clickhouse
+```
+
+### Making ClickHouse browsable in a GUI
+
+DataLakeCatalog tables never register in `system.tables`, so DBeaver and other
+tools see `datalake` as empty. Create pass-through views once after loading:
+
+```bash
+uv run python scripts/create_clickhouse_views.py
+```
+
+That exposes all 29 tables as `raw.<table>` — visible to `system.tables` and
+`information_schema`, with real column types, and without the
+`datalake."raw.dim_customer"` quoting that GUIs mangle. No data is copied.
+
+Postgres always runs — it stores the Iceberg catalog metadata regardless of
+which engine you query. `sync_postgres.py` is only needed if you want the
+`analytics` copy as well.
+
 ## The engine manifest
 
 [`engines.yaml`](engines.yaml) is the contract between this repo and the BI app.
@@ -190,6 +225,28 @@ These all cost real debugging time; they are recorded so they only cost it once.
   then settles. Reproduced identically under s3fs and PyArrowFileIO, and under
   two MinIO releases. `with_s3_retry()` in `_common.py` absorbs it; only wrap
   genuinely idempotent operations.
+- **ClickHouse can write to Iceberg, but only just.** `INSERT` and
+  `ALTER … DELETE` work with `allow_insert_into_iceberg=1` (beta/experimental
+  gates) and produce genuine Iceberg snapshots — verified `append` then
+  `overwrite` in the catalog, and **Trino reads the result correctly**. But
+  **PyIceberg cannot read ClickHouse-written data files**, failing with
+  `Cannot convert field, missing field-id`. `CREATE TABLE` into the catalog and
+  `TRUNCATE` are not supported at all. Treat ClickHouse as read-only unless
+  every reader in the loop is known to tolerate its output.
+- **ClickHouse rejects two auth headers at once** — `Code: 516 … not allowed to
+  use X-ClickHouse HTTP headers and Authorization HTTP header simultaneously`.
+  DBeaver's modern ClickHouse driver (clickhouse-jdbc v2) authenticates with
+  `X-ClickHouse-User/Key`; if the client also sends `Authorization: Basic`, the
+  server refuses the pair, and there is **no server setting to relax it**
+  (checked `system.settings` and `system.server_settings`). Options, in order:
+  use DBeaver's **ClickHouse (Legacy)** driver, which sends Basic auth only;
+  ensure credentials are supplied in exactly one place (not in both the auth
+  fields and the JDBC URL); or connect with a **Postgres driver on port 9005**,
+  where ClickHouse's Postgres wire emulation bypasses the JDBC driver entirely:
+  ```bash
+  PGPASSWORD=clickhouse psql -h 127.0.0.1 -p 9005 -U default -d default \
+    -c 'SELECT count() FROM datalake."raw.dim_customer"'
+  ```
 - **ClickHouse won't use server-configured S3 credentials in user queries**
   unless `s3_allow_server_credentials_in_user_queries` is set. The alternative
   puts the MinIO key/secret into SQL and `SHOW CREATE DATABASE` output.
@@ -199,6 +256,17 @@ These all cost real debugging time; they are recorded so they only cost it once.
 - **ClickHouse `initdb.d` scripts run only on a first-ever start.** One failed
   boot leaves the catalog permanently unattached with no obvious symptom, so
   catalog attachment is an idempotent one-shot compose service instead.
+- **`network … not found` on `up`.** Containers store the network *ID* they were
+  created with. If `warehouse-net` was recreated since — a `down` and later
+  `up`, or a Docker restart — older containers still point at the dead ID, and
+  Compose tries to *start* them rather than recreate them. Delete the stale ones
+  and let Compose rebuild:
+  ```bash
+  docker rm -f trino duckdb-api clickhouse clickhouse-init
+  docker compose --profile engines up -d
+  ```
+  Volumes are untouched, so the lake survives. `docker compose --profile all
+  down` before bringing the stack back up avoids it entirely.
 - **JSON over HTTP loses numeric types.** The DuckDB HTTP endpoint returns
   `SUM(...)` as the string `"3649866.5512"`. A BI app on a JSON transport has to
   re-infer types a native driver would have preserved.
