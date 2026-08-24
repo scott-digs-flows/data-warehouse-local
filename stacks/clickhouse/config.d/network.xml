@@ -1,0 +1,17 @@
+<clickhouse>
+    <!-- The base image ships <listen_host>::1</listen_host> (loopback only), so
+         nothing outside the container can connect. Worse, the healthcheck runs
+         *inside* the container and passes anyway, so the service reports healthy
+         while being unreachable. Listen on all interfaces instead.
+
+         Safe here because ports are published to localhost only. -->
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- PostgreSQL wire-protocol emulation. Lets GUI clients (DBeaver) connect
+         with a Postgres driver, which sidesteps clickhouse-jdbc entirely — that
+         driver can emit both `Authorization: Basic` and `X-ClickHouse-User`
+         headers at once, which ClickHouse rejects with Code 516 and offers no
+         server-side setting to relax. Emulation is partial: queries work,
+         some client introspection does not. -->
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>

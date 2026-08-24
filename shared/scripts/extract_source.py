@@ -36,7 +36,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from rich.console import Console
 
-from _common import EXCLUDED_TABLES, SCHEMA_DIR, snake_case
+from common import EXCLUDED_TABLES, SCHEMA_DIR, snake_case
 from rich.progress import (
     BarColumn,
     DownloadColumn,
@@ -48,14 +48,14 @@ from rich.progress import (
 
 console = Console()
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(REPO_ROOT / ".env", override=False)
 
 BAK_URL = os.environ.get(
     "AW_BAK_URL",
     "https://github.com/Microsoft/sql-server-samples/releases/download/adventureworks/AdventureWorksDW2022.bak",
 )
-DATA_DIR = REPO_ROOT / os.environ.get("AW_DATA_DIR", "data/adventure_works_dw").lstrip("./")
+DATA_DIR = REPO_ROOT / os.environ.get("AW_DATA_DIR", "shared/data/adventure_works_dw").lstrip("./")
 BAK_PATH = DATA_DIR / "AdventureWorksDW2022.bak"
 RAW_DIR = DATA_DIR / "_raw_pipe"
 SA_PASSWORD = os.environ.get("MSSQL_SA_PASSWORD", "Aw_DW_local_123!")

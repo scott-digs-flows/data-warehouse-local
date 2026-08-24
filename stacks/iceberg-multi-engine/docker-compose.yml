@@ -21,6 +21,11 @@
 #   docker compose --profile engines up -d        # lake + every engine
 #
 # All credentials come from .env — see .env.example. Nothing is hardcoded here.
+#
+# The project name is pinned rather than derived from the directory, so the
+# volumes created before this stack moved under stacks/ are still found.
+
+name: data-warehouse-local
 
 services:
   # ============================================================

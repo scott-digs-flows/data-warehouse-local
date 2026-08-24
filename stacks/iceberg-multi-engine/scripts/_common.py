@@ -10,11 +10,14 @@ from typing import Callable, TypeVar
 
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(REPO_ROOT / ".env", override=False)
+# This stack lives at stacks/iceberg-multi-engine/; the raw layer is shared
+# across stacks at the repo root.
+STACK_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = STACK_ROOT.parent.parent
+load_dotenv(STACK_ROOT / ".env", override=False)
 
-DATA_DIR = REPO_ROOT / os.environ.get("AW_DATA_DIR", "data/adventure_works_dw").lstrip("./")
-SCHEMA_DIR = REPO_ROOT / "schemas"
+DATA_DIR = REPO_ROOT / os.environ.get("AW_DATA_DIR", "shared/data/adventure_works_dw").lstrip("./")
+SCHEMA_DIR = REPO_ROOT / "shared" / "schemas"
 
 CATALOG_NAME = os.environ.get("ICEBERG_CATALOG_NAME", "adventure_works_dw")
 CATALOG_URI = os.environ.get("ICEBERG_CATALOG_URI", "http://localhost:8181/catalog")

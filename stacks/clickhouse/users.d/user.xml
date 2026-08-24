@@ -1,0 +1,19 @@
+<clickhouse>
+    <users>
+        <default>
+            <!-- An explicit password, rather than the image's blank default.
+                 With no password, some JDBC clients (DBeaver among them) send
+                 BOTH `Authorization: Basic` and `X-ClickHouse-User/Key`, and
+                 ClickHouse rejects that combination outright with Code 516.
+
+                 Defined here in users.d rather than via the image's
+                 CLICKHOUSE_PASSWORD env var, because that only takes effect on
+                 a first-ever container start; config is applied every boot. -->
+            <password from_env="CLICKHOUSE_PASSWORD"/>
+            <networks><ip>::/0</ip></networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+    </users>
+</clickhouse>
