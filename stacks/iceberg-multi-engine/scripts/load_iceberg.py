@@ -142,9 +142,17 @@ def apply_pinned_nullability(tbl: pa.Table, cols: list[dict]) -> pa.Table:
     `optional`. Applying it here is what makes the pinned schema a *constraint*
     rather than documentation: 144 of 343 fields become required.
 
-    Runs after strip_nul_bytes(), which is load-bearing ordering — two of the
-    NOT NULL columns hold NCHAR(0) values that only become empty strings there.
-    Applied before the cast, they would still be NULL and the load would fail.
+    What this depends on is DW-19's *decision*, not the ordering below it. Two
+    pinned-NOT-NULL columns — dim_product's Spanish and French names — hold 287
+    NCHAR(0) values each, and DW-19 chose to land those as the empty string. Had
+    it chosen NULL, those two columns would fail this cast on every load and
+    enforcement would have been impossible without relaxing their pinned flags.
+
+    The call order relative to strip_nul_bytes() is *not* load-bearing, contrary
+    to what this comment first claimed: pre-strip those values are the one-byte
+    string "\x00", never NULL, and strip_nul_bytes() uses replace_substring,
+    which propagates nulls and cannot create one. Casting either side of it
+    succeeds. Corrected after data-quality-analyst disproved the original claim.
 
     `Table.cast()` raises on a required column that holds nulls ("Casting field
     'x' with null values to non-nullable"). That is the constraint biting, and
