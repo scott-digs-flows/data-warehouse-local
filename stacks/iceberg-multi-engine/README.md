@@ -169,18 +169,19 @@ what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
 `load_iceberg.py` run.
 
 ```bash
-uv run python scripts/verify_lake.py            # ~9 s, exits non-zero on a bad lake
-uv run python scripts/verify_lake.py --list     # the thirteen checks
+uv run python scripts/verify_lake.py            # ~18 s, exits non-zero on a bad lake
+uv run python scripts/verify_lake.py --list     # the fourteen checks
 uv run python scripts/verify_lake.py --check null_reconciliation
 uv run python scripts/verify_lake.py --strict   # an unreachable engine fails too
 ```
 
-It reads the source once and the lake once, then runs thirteen checks over those
+It reads the source once and the lake once, then runs fourteen checks over those
 two summaries: row counts, type fidelity, nullability flags *and* that the
 constraint still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
 invariants, **a value-for-value digest of all 343 columns**, referential
-integrity, self-referencing hierarchies, decimal exactness, and cross-engine
-agreement.
+integrity, primary-key uniqueness, self-referencing hierarchies, decimal
+exactness, and cross-engine agreement. **~18 s wall**, varying mainly with the
+lake read; the run prints its own breakdown.
 
 **Foreign keys are derived, not hand-listed** (DW-23). Classifying every `*_key`
 column against the pinned schemas yields 44 join edges — where the hand-written

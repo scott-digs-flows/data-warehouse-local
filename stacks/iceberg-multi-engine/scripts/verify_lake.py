@@ -280,8 +280,8 @@ TYPE_MAPPING_CASES = [
 def check_type_mapping(src, lake, ctx) -> Result:
     """Pin every branch of expected_iceberg_type(), including the unexercised ones.
 
-    This dataset has no bigint, decimal/numeric, smallmoney, datetimeoffset or
-    time columns, so 8 of the branches below are never reached by check_types.
+    This dataset has no bigint, decimal/numeric, smallmoney, datetime2,
+    smalldatetime, datetimeoffset, time or xml columns, so several of the branches below are never reached by check_types.
     They could drift from the intended mapping and nothing would notice until a
     source dataset that uses them arrived.
 
@@ -293,7 +293,22 @@ def check_type_mapping(src, lake, ctx) -> Result:
     Anyone tempted to "simplify" this by importing arrow_type would destroy the
     only independent statement of what the types are supposed to be.
     """
-    bad = []
+    # Tie the case list to the function's actual branches. Without this, adding
+    # a branch to expected_iceberg_type() and forgetting to pin it leaves this
+    # check green — review proved it by adding `uniqueidentifier -> int` unnoticed.
+    import ast as _ast, inspect as _inspect
+    branches: set[str] = set()
+    for node in _ast.walk(_ast.parse(_inspect.getsource(expected_iceberg_type))):
+        if isinstance(node, _ast.Compare) and isinstance(node.left, _ast.Name) \
+                and node.left.id == "t":
+            for c in node.comparators:
+                if isinstance(c, _ast.Constant):
+                    branches.add(c.value)
+                elif isinstance(c, (_ast.Tuple, _ast.List)):
+                    branches.update(e.value for e in c.elts if isinstance(e, _ast.Constant))
+    unpinned = sorted(branches - {c[0] for c in TYPE_MAPPING_CASES})
+    bad = [f"branch '{b}' exists in expected_iceberg_type() but is not pinned"
+           for b in unpinned]
     for sql_type, precision, scale, want in TYPE_MAPPING_CASES:
         got = expected_iceberg_type(
             {"sql_type": sql_type, "precision": precision, "scale": scale}
@@ -525,10 +540,21 @@ def derive_joins(tables: set[str] | None = None) -> tuple[list[tuple], list[tupl
         t = spec["table"]
         for c in wanted(spec):
             n = c["name"]
-            if not n.endswith("_key") or n.endswith("_alternate_key"):
+            if not n.endswith("_key"):
                 continue
             if n.startswith("parent_"):
-                hierarchies.append((t, n, own_primary_key(t)))
+                # The parent points at whatever the column is named after:
+                # parent_employee_key -> employee_key (surrogate), and
+                # parent_account_code_alternate_key -> account_code_alternate_key
+                # (natural). Handling both here is why this is tested BEFORE the
+                # _alternate_key rule — ordering it the other way silently
+                # dropped the two natural-key hierarchies.
+                target_col = n[len("parent_"):]
+                cols_here = {x["name"] for x in wanted(spec)}
+                hierarchies.append((t, n, target_col if target_col in cols_here
+                                    else own_primary_key(t)))
+                continue
+            if n.endswith("_alternate_key"):
                 continue
             if n == own_primary_key(t):
                 continue
@@ -538,11 +564,48 @@ def derive_joins(tables: set[str] | None = None) -> tuple[list[tuple], list[tupl
                 fks.append((t, n, target, own_primary_key(target)))
             elif stem.endswith("_date") and "dim_date" in tables:
                 fks.append((t, n, "dim_date", "date_key"))
-            elif t.endswith(stem):
+            elif t == f"fact_{stem}":
                 continue                      # a fact's own degenerate key
             else:
                 unclassified.append(f"{t}.{n} (no dim_{stem}, not a PK, not alternate)")
     return fks, hierarchies, unclassified
+
+
+def derive_primary_keys() -> list[tuple[str, str]]:
+    """Each table's own surrogate key, by the same naming rule as derive_joins."""
+    out = []
+    for path in list_csv_files():
+        spec = pinned(path.stem)
+        t = spec["table"]
+        pk = own_primary_key(t)
+        if any(c["name"] == pk for c in wanted(spec)):
+            out.append((t, pk))
+    return out
+
+
+def check_primary_keys(src, lake, ctx) -> Result:
+    """Surrogate keys must be unique.
+
+    derive_joins already identifies these and discards them, and every FK check
+    is a set-membership test — which cannot see a duplicate. A duplicated
+    surrogate key would leave all 44 joins green while silently fanning out any
+    join that touches it.
+    """
+    bad, checked = [], 0
+    for t, pk in derive_primary_keys():
+        if t not in lake:
+            continue
+        checked += 1
+        vals = lake[t].arrow.column(pk).to_pylist()
+        if len(vals) != len(set(vals)):
+            dupes = {v for v in vals if vals.count(v) > 1} if len(vals) < 50_000 else set()
+            bad.append(f"{t}.{pk}: {len(vals) - len(set(vals))} duplicate(s)"
+                       + (f" e.g. {sorted(dupes)[:3]}" if dupes else ""))
+        if any(v is None for v in vals):
+            bad.append(f"{t}.{pk}: contains NULL")
+    if bad:
+        return Result(FAIL, f"{len(bad)} primary key problem(s)", bad[:10])
+    return Result(PASS, f"{checked} surrogate keys unique and non-NULL")
 
 
 def check_referential_integrity(src, lake, ctx) -> Result:
@@ -552,23 +615,33 @@ def check_referential_integrity(src, lake, ctx) -> Result:
         return Result(FAIL, f"{len(unclassified)} *_key column(s) could not be classified",
                       unclassified[:10] +
                       ["a key the derivation cannot place is an uncovered join, not a footnote"])
-    bad, checked = [], 0
+    bad, checked, compared, vacuous = [], 0, 0, []
     for ft, fk, dt, dk in fks:
         if ft not in lake or dt not in lake:
             bad.append(f"{ft}.{fk} -> {dt}: table missing from the lake")
             continue
         checked += 1
         dim = set(lake[dt].arrow.column(dk).to_pylist())
-        orphans = {v for v in lake[ft].arrow.column(fk).to_pylist()
-                   if v is not None and v not in dim}
+        vals = [v for v in lake[ft].arrow.column(fk).to_pylist() if v is not None]
+        compared += len(vals)
+        if not vals:
+            # Not a failure — a nullable FK may legitimately be all NULL — but it
+            # must not be counted as evidence. new_fact_currency_rate.date_key is
+            # 0/50 non-null on clean data today.
+            vacuous.append(f"{ft}.{fk} -> {dt}")
+        orphans = {v for v in vals if v not in dim}
         if orphans:
             bad.append(f"{ft}.{fk} -> {dt}.{dk}: {len(orphans)} orphan key(s) "
                        f"e.g. {sorted(orphans)[:3]}")
     if bad:
         return Result(FAIL, f"{len(bad)} of {len(fks)} derived join(s) broken", bad[:10])
-    return Result(PASS, f"0 orphans across {checked} derived joins",
-                  ["derived from the pinned schemas, not hand-listed; "
-                   "an unclassifiable *_key fails this check"])
+    notes = ["derived from the pinned schemas, not hand-listed; "
+             "an unclassifiable *_key fails this check"]
+    if vacuous:
+        notes.append(f"{len(vacuous)} edge(s) had no non-NULL values and therefore "
+                     f"tested nothing: {', '.join(vacuous)}")
+    return Result(PASS, f"0 orphans across {checked} derived joins "
+                        f"({compared:,} non-NULL values compared)", notes)
 
 
 def check_hierarchies(src, lake, ctx) -> Result:
@@ -682,6 +755,7 @@ CHECKS: dict[str, Callable] = {
     "null_reconciliation": check_null_reconciliation,
     "source_values": check_source_values,
     "value_digests": check_value_digests,
+    "primary_keys": check_primary_keys,
     "referential_integrity": check_referential_integrity,
     "hierarchies": check_hierarchies,
     "decimal_exactness": check_decimal_exactness,
@@ -694,9 +768,13 @@ NOT_CHECKED = [
     "A compensating swap — two rows exchanging values within one column. Both "
     "value_digests and decimal_exactness compare multisets and sums, which such a "
     "swap leaves unchanged.",
-    "Foreign keys that the naming convention cannot express. The 44 edges checked are "
-    "derived from *_key columns; a real FK named differently would not be found, though "
-    "an unclassifiable *_key now fails rather than being skipped.",
+    "Foreign keys the *_key naming convention cannot express. Two real ones exist here: "
+    "fact_internet_sales_reason's composite (sales_order_number, sales_order_line_number) "
+    "into fact_internet_sales, and new_fact_currency_rate.currency_id into "
+    "dim_currency.currency_alternate_key. Both are clean today, neither is checked.",
+    "Referential integrity counts EDGES, not rows, and skips NULL foreign keys — so a "
+    "nullable FK that is entirely NULL passes while testing nothing. The run reports how "
+    "many non-NULL values were actually compared, and names any edge that tested nothing.",
     "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
     "compares a grouped SUM; engines could disagree on every decimal and pass here.",
     "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "
