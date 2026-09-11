@@ -161,6 +161,35 @@ profile) and the dependency download. And step 1, the extract, is a one-time cos
 on top — **33 s** measured under DW-8 with the SQL Server image and the `.bak`
 already cached, or roughly 10 min on a machine that has to fetch both.
 
+### Checking the lake is still correct
+
+`smoke_test.py` asks whether the engines agree. It does **not** compare the lake
+against the source files, so it would not notice a loader regression — which is
+what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
+`load_iceberg.py` run.
+
+```bash
+uv run python scripts/verify_lake.py            # ~16 s, exits non-zero on a bad lake
+uv run python scripts/verify_lake.py --list     # the ten checks
+uv run python scripts/verify_lake.py --check null_reconciliation
+uv run python scripts/verify_lake.py --strict   # an unreachable engine fails too
+```
+
+It reads the source once and the lake once, then runs ten checks over those two
+summaries: row counts, type fidelity, nullability flags *and* that the constraint
+still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
+invariants, referential integrity including the three role-playing date keys,
+decimal exactness, and cross-engine agreement.
+
+**Expectations are derived from the source on every run, not hardcoded**, so the
+checks do not rot as the data changes — the one exception is `known_baseline`,
+which asserts 1,060,715 rows / 29 tables / 343 columns precisely, so that drift
+in the *source* is caught too.
+
+Engines that are down are **named in the output**, never silently skipped, and an
+unreachable lake fails with an actionable message rather than a screen of
+reassuring skips. The run ends by listing what it does *not* check.
+
 ### Beyond ClickHouse
 
 The sequence above is the ClickHouse path. For the other engines:

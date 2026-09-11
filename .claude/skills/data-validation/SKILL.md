@@ -9,6 +9,25 @@ The claim this project makes is that **every engine sees the same data, and that
 data matches the source**. Validation is what turns that from an assertion into
 a fact.
 
+
+## Start here: run the suite
+
+Most of what follows is now automated. Before doing any of it by hand:
+
+```bash
+cd stacks/iceberg-multi-engine
+uv run python scripts/verify_lake.py
+```
+
+Ten checks, ~16 s, exits non-zero on a bad lake: row counts against parsed CSVs,
+type fidelity over all 343 columns, nullability flags plus proof the constraint
+still bites, null-count reconciliation, the DW-18/DW-19 value invariants,
+referential integrity, decimal exactness, and cross-engine agreement. It prints
+what it does *not* cover.
+
+Do the manual checks below when you are investigating something the suite does
+not cover, or when a check fails and you need to see the data behind it.
+
 ## Principles
 
 **The loader's success message is not evidence.** It reports what it believes it
