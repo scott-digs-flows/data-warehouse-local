@@ -248,6 +248,68 @@ def expected_iceberg_type(c: dict) -> str:
     return "string"
 
 
+# Every branch of expected_iceberg_type(), including the 8 with no data in this
+# dataset. (sql_type, precision, scale) -> expected Iceberg type.
+TYPE_MAPPING_CASES = [
+    ("bit", None, None, "boolean"),
+    ("tinyint", 3, 0, "int"),        # Iceberg has no 8-bit int
+    ("smallint", 5, 0, "int"),       # nor 16-bit
+    ("int", 10, 0, "int"),
+    ("bigint", 19, 0, "long"),       # no data here
+    ("real", 24, None, "float"),
+    ("float", 53, None, "double"),
+    ("decimal", 18, 4, "decimal(18, 4)"),   # no data here
+    ("numeric", 9, 2, "decimal(9, 2)"),     # no data here
+    ("decimal", None, None, "decimal(38, 0)"),
+    ("money", 19, 4, "decimal(19, 4)"),
+    ("smallmoney", 10, 4, "decimal(10, 4)"),  # no data here
+    ("date", None, None, "date"),
+    ("datetime", None, None, "timestamp"),
+    ("datetime2", None, None, "timestamp"),
+    ("smalldatetime", None, None, "timestamp"),
+    ("datetimeoffset", None, None, "timestamptz"),  # no data here
+    ("time", None, None, "time"),                   # no data here
+    ("nvarchar", None, None, "string"),
+    ("nchar", None, None, "string"),
+    ("varchar", None, None, "string"),
+    ("char", None, None, "string"),
+    ("xml", None, None, "string"),                  # falls through to string
+]
+
+
+def check_type_mapping(src, lake, ctx) -> Result:
+    """Pin every branch of expected_iceberg_type(), including the unexercised ones.
+
+    This dataset has no bigint, decimal/numeric, smallmoney, datetimeoffset or
+    time columns, so 8 of the branches below are never reached by check_types.
+    They could drift from the intended mapping and nothing would notice until a
+    source dataset that uses them arrived.
+
+    **What this buys and what it does not.** It pins the *duplicate* against
+    intended behaviour — NOT against the loader. If load_iceberg.arrow_type
+    changed, this check would still pass while check_types failed, and that is
+    the correct division: expected_iceberg_type() deliberately restates the
+    mapping so check_types is not comparing the implementation to itself.
+    Anyone tempted to "simplify" this by importing arrow_type would destroy the
+    only independent statement of what the types are supposed to be.
+    """
+    bad = []
+    for sql_type, precision, scale, want in TYPE_MAPPING_CASES:
+        got = expected_iceberg_type(
+            {"sql_type": sql_type, "precision": precision, "scale": scale}
+        )
+        if got != want:
+            bad.append(f"{sql_type}(p={precision},s={scale}): got {got}, want {want}")
+    if bad:
+        return Result(FAIL, f"{len(bad)} of {len(TYPE_MAPPING_CASES)} branches drifted", bad[:10])
+    live = {c["sql_type"] for p in list_csv_files() for c in wanted(pinned(p.stem))}
+    unexercised = sorted({c[0] for c in TYPE_MAPPING_CASES} - live)
+    return Result(PASS, f"all {len(TYPE_MAPPING_CASES)} mapping branches hold",
+                  [f"{len(unexercised)} have no data in this dataset and are pinned only here: "
+                   f"{', '.join(unexercised)}",
+                   "pins the duplicate against intent, NOT against load_iceberg.arrow_type"])
+
+
 def check_nullability_flags(src, lake, ctx) -> Result:
     """Pinned NOT NULL must mean Iceberg `required`, column for column."""
     req = opt = 0
@@ -415,34 +477,139 @@ def check_value_digests(src, lake, ctx) -> Result:
                   ["order-independent digest: a compensating swap within a column is not caught"])
 
 
-def check_referential_integrity(src, lake, ctx) -> Result:
-    """Star-schema joins, including the three role-playing date keys.
+def own_primary_key(table: str) -> str:
+    """A table's own surrogate key: dim_customer -> customer_key."""
+    stem = table[4:] if table.startswith("dim_") else table[5:] if table.startswith("fact_") else table
+    return f"{stem}_key"
 
-    fact_internet_sales joins dim_date three times — order, due and ship — and a
-    naming convention cannot tell them apart, so each is checked separately.
+
+def schema_tables() -> set[str]:
+    """Tables the pinned schemas say should exist — the classification universe.
+
+    Deliberately not "tables currently in the lake": a dimension missing from the
+    lake is a different failure from a key the naming convention cannot place,
+    and deriving against lake contents conflated the two into a misleading
+    "no dim_x" message.
     """
-    joins = [
-        ("fact_internet_sales", "customer_key", "dim_customer", "customer_key"),
-        ("fact_internet_sales", "product_key", "dim_product", "product_key"),
-        ("fact_internet_sales", "order_date_key", "dim_date", "date_key"),
-        ("fact_internet_sales", "due_date_key", "dim_date", "date_key"),
-        ("fact_internet_sales", "ship_date_key", "dim_date", "date_key"),
-        ("fact_reseller_sales", "reseller_key", "dim_reseller", "reseller_key"),
-    ]
-    bad, done = [], []
-    for ft, fk, dt, dk in joins:
+    return {pinned(p.stem)["table"] for p in list_csv_files()}
+
+
+def derive_joins(tables: set[str] | None = None) -> tuple[list[tuple], list[tuple], list[str]]:
+    """Work the foreign keys out from the pinned schemas rather than listing them.
+
+    Hand-listing is how the previous version acquired a gap: it covered 6 joins
+    and read as complete. Derivation covers 44 and, more importantly, *notices*
+    when a new table brings a key it cannot classify.
+
+    Every `*_key` column falls into one of five buckets. Four are deliberately
+    not joins, and each is excluded by a stated rule rather than by omission:
+
+    * `<table>_key` matching the table's own name — its surrogate primary key.
+    * `*_alternate_key` — the natural/business key from the source system.
+      `dim_product.product_alternate_key` is a product code, not a reference.
+    * `parent_*_key` — a self-referencing hierarchy, checked separately because
+      a NULL is valid at the root and a cycle is the real corruption.
+    * A fact's own degenerate key, e.g. `fact_finance.finance_key`.
+
+    Anything left resolves to `dim_<stem>`, or to `dim_date` for the
+    role-playing date keys — `order_`, `due_` and `ship_` all point at the same
+    dimension, and naming alone cannot tell you they are different roles.
+
+    Returns (fk_edges, hierarchies, unclassified). A non-empty `unclassified`
+    is a failure, not a footnote.
+    """
+    tables = tables if tables is not None else schema_tables()
+    fks, hierarchies, unclassified = [], [], []
+    for path in list_csv_files():
+        spec = pinned(path.stem)
+        t = spec["table"]
+        for c in wanted(spec):
+            n = c["name"]
+            if not n.endswith("_key") or n.endswith("_alternate_key"):
+                continue
+            if n.startswith("parent_"):
+                hierarchies.append((t, n, own_primary_key(t)))
+                continue
+            if n == own_primary_key(t):
+                continue
+            stem = n[:-4]
+            target = f"dim_{stem}"
+            if target in tables and target != t:
+                fks.append((t, n, target, own_primary_key(target)))
+            elif stem.endswith("_date") and "dim_date" in tables:
+                fks.append((t, n, "dim_date", "date_key"))
+            elif t.endswith(stem):
+                continue                      # a fact's own degenerate key
+            else:
+                unclassified.append(f"{t}.{n} (no dim_{stem}, not a PK, not alternate)")
+    return fks, hierarchies, unclassified
+
+
+def check_referential_integrity(src, lake, ctx) -> Result:
+    """Every derived fact-to-dimension edge, including role-playing dates."""
+    fks, _, unclassified = derive_joins()
+    if unclassified:
+        return Result(FAIL, f"{len(unclassified)} *_key column(s) could not be classified",
+                      unclassified[:10] +
+                      ["a key the derivation cannot place is an uncovered join, not a footnote"])
+    bad, checked = [], 0
+    for ft, fk, dt, dk in fks:
         if ft not in lake or dt not in lake:
+            bad.append(f"{ft}.{fk} -> {dt}: table missing from the lake")
             continue
+        checked += 1
         dim = set(lake[dt].arrow.column(dk).to_pylist())
-        orphans = {v for v in lake[ft].arrow.column(fk).to_pylist() if v not in dim}
-        done.append(f"{ft}.{fk}->{dt}")
+        orphans = {v for v in lake[ft].arrow.column(fk).to_pylist()
+                   if v is not None and v not in dim}
         if orphans:
             bad.append(f"{ft}.{fk} -> {dt}.{dk}: {len(orphans)} orphan key(s) "
                        f"e.g. {sorted(orphans)[:3]}")
     if bad:
-        return Result(FAIL, f"{len(bad)} join(s) with orphans", bad)
-    return Result(PASS, f"0 orphans across {len(done)} joins",
-                  ["role-playing dates checked separately: order, due, ship"])
+        return Result(FAIL, f"{len(bad)} of {len(fks)} derived join(s) broken", bad[:10])
+    return Result(PASS, f"0 orphans across {checked} derived joins",
+                  ["derived from the pinned schemas, not hand-listed; "
+                   "an unclassifiable *_key fails this check"])
+
+
+def check_hierarchies(src, lake, ctx) -> Result:
+    """Self-referencing parent_*_key columns: dangling parents and cycles.
+
+    Two distinct failures, and an orphan check alone only finds the first:
+
+    * A non-NULL parent that does not exist in its own table's primary key.
+      NULL is valid and expected — that is the root of the tree.
+    * A cycle. Every row can have a parent that exists, and the structure still
+      be corrupt, because following parents never terminates. That is invisible
+      to a membership test and is why this is a separate check.
+    """
+    _, hierarchies, _ = derive_joins()
+    bad, checked = [], 0
+    for t, col, pk in hierarchies:
+        if t not in lake:
+            continue
+        checked += 1
+        arrow = lake[t].arrow
+        parent = dict(zip(arrow.column(pk).to_pylist(), arrow.column(col).to_pylist()))
+        keys = set(parent)
+        dangling = {p for p in parent.values() if p is not None and p not in keys}
+        if dangling:
+            bad.append(f"{t}.{col}: {len(dangling)} parent(s) not in {pk} "
+                       f"e.g. {sorted(dangling)[:3]}")
+        for start in parent:                  # walk to a root or a repeat
+            seen, node = set(), start
+            while node is not None and node in parent:
+                if node in seen:
+                    bad.append(f"{t}.{col}: cycle reachable from {pk}={start} "
+                               f"(revisits {node})")
+                    break
+                seen.add(node)
+                node = parent[node]
+            if bad and bad[-1].startswith(f"{t}.{col}: cycle"):
+                break                         # one cycle report per column is enough
+    if bad:
+        return Result(FAIL, f"{len(bad)} hierarchy problem(s)", bad[:10])
+    return Result(PASS, f"{checked} self-referencing hierarchies intact (no dangling parents, "
+                        f"no cycles)", ["a NULL parent is the root and is not flagged"])
 
 
 def check_decimal_exactness(src, lake, ctx) -> Result:
@@ -509,12 +676,14 @@ CHECKS: dict[str, Callable] = {
     "known_baseline": check_known_baseline,
     "row_counts": check_row_counts,
     "types": check_types,
+    "type_mapping": check_type_mapping,
     "nullability_flags": check_nullability_flags,
     "nullability_enforced": check_nullability_enforced,
     "null_reconciliation": check_null_reconciliation,
     "source_values": check_source_values,
     "value_digests": check_value_digests,
     "referential_integrity": check_referential_integrity,
+    "hierarchies": check_hierarchies,
     "decimal_exactness": check_decimal_exactness,
     "cross_engine": check_cross_engine,
 }
@@ -525,9 +694,9 @@ NOT_CHECKED = [
     "A compensating swap — two rows exchanging values within one column. Both "
     "value_digests and decimal_exactness compare multisets and sums, which such a "
     "swap leaves unchanged.",
-    "Referential integrity beyond the 6 joins listed in check_referential_integrity. "
-    "fact_reseller_sales' other foreign keys and the 4 self-referencing parent_*_key "
-    "hierarchies are not covered.",
+    "Foreign keys that the naming convention cannot express. The 44 edges checked are "
+    "derived from *_key columns; a real FK named differently would not be found, though "
+    "an unclassifiable *_key now fails rather than being skipped.",
     "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
     "compares a grouped SUM; engines could disagree on every decimal and pass here.",
     "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "

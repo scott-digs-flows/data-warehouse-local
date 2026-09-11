@@ -169,18 +169,30 @@ what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
 `load_iceberg.py` run.
 
 ```bash
-uv run python scripts/verify_lake.py            # ~17 s, exits non-zero on a bad lake
-uv run python scripts/verify_lake.py --list     # the eleven checks
+uv run python scripts/verify_lake.py            # ~9 s, exits non-zero on a bad lake
+uv run python scripts/verify_lake.py --list     # the thirteen checks
 uv run python scripts/verify_lake.py --check null_reconciliation
 uv run python scripts/verify_lake.py --strict   # an unreachable engine fails too
 ```
 
-It reads the source once and the lake once, then runs eleven checks over those
+It reads the source once and the lake once, then runs thirteen checks over those
 two summaries: row counts, type fidelity, nullability flags *and* that the
 constraint still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
 invariants, **a value-for-value digest of all 343 columns**, referential
-integrity including the three role-playing date keys, decimal exactness, and
-cross-engine agreement.
+integrity, self-referencing hierarchies, decimal exactness, and cross-engine
+agreement.
+
+**Foreign keys are derived, not hand-listed** (DW-23). Classifying every `*_key`
+column against the pinned schemas yields 44 join edges — where the hand-written
+list had 6 — plus 20 own primary keys, 15 `*_alternate_key` natural keys and 4
+self-referencing hierarchies, each excluded by a stated rule rather than by
+omission. A `*_key` the convention cannot place **fails the check**: that is the
+whole reason to derive, because a new source's unrecognised key shows up as a
+failure instead of as silent non-coverage.
+
+Hierarchies are checked separately because a cycle is invisible to an orphan
+test — every `parent_*_key` can exist and the structure still be corrupt. A NULL
+parent is the root and is not flagged.
 
 The value digest earns its place: without it, counts and types and flags all pass
 while an entire column's contents are wrong. Independent review replaced a whole
