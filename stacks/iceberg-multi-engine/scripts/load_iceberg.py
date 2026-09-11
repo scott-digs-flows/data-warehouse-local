@@ -133,6 +133,31 @@ def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
     return tbl
 
 
+def apply_pinned_nullability(tbl: pa.Table, cols: list[dict]) -> pa.Table:
+    """Mark every column the source declares NOT NULL as required (DW-20).
+
+    PyArrow's CSV reader always returns all-nullable fields, and the Iceberg
+    schema is built from that Arrow schema — so until this existed, the pinned
+    `nullable` flag was read and never consulted, and all 343 fields landed
+    `optional`. Applying it here is what makes the pinned schema a *constraint*
+    rather than documentation: 144 of 343 fields become required.
+
+    Runs after strip_nul_bytes(), which is load-bearing ordering — two of the
+    NOT NULL columns hold NCHAR(0) values that only become empty strings there.
+    Applied before the cast, they would still be NULL and the load would fail.
+
+    `Table.cast()` raises on a required column that holds nulls ("Casting field
+    'x' with null values to non-nullable"). That is the constraint biting, and
+    it is deliberate: main() collects the failure per table and exits non-zero,
+    so a source that violates its own declared constraints stops the load loudly
+    instead of quietly widening the schema to fit.
+    """
+    return tbl.cast(pa.schema([
+        pa.field(c["name"], tbl.schema.field(c["name"]).type, nullable=c["nullable"])
+        for c in cols
+    ]))
+
+
 def read_csv(csv_path: Path, spec: dict) -> pa.Table:
     """Parse CSV using the pinned types, then rename columns to snake_case."""
     cols = wanted_columns(spec)
@@ -160,7 +185,8 @@ def read_csv(csv_path: Path, spec: dict) -> pa.Table:
         ),
     )
     tbl = tbl.rename_columns([c["name"] for c in cols])
-    return strip_nul_bytes(tbl)
+    tbl = strip_nul_bytes(tbl)
+    return apply_pinned_nullability(tbl, cols)
 
 
 def get_catalog() -> RestCatalog:
@@ -187,6 +213,15 @@ def write_table(catalog: RestCatalog, ident: tuple[str, ...], arrow_tbl: pa.Tabl
             pass
         # Unpartitioned by design: the largest table here is under a million
         # rows, so a partition spec would add complexity and change nothing.
+        #
+        # The drop-and-recreate above is also what lets DW-20 work at all.
+        # Iceberg permits relaxing a field from required to optional but not
+        # the reverse, because existing rows may already hold nulls — so
+        # tightening nullability on a live table would need a genuine schema
+        # evolution path, or would simply be refused. Full-refresh loading
+        # sidesteps that entirely: every run creates the table fresh from the
+        # pinned schema, so nullability is set at creation and never evolved,
+        # and a re-run against already-required tables is just another create.
         tbl = catalog.create_table(ident, schema=arrow_tbl.schema)
         tbl.append(arrow_tbl)
 

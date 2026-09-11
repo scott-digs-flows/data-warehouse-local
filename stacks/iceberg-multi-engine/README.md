@@ -180,6 +180,14 @@ layer.
   between readers, which would give each engine a subtly different view of the
   same data.
 - **Tables are unpartitioned.** The largest is under a million rows.
+- **Pinned `NOT NULL` is enforced, not just recorded.** 144 of 343 fields are
+  Iceberg `required`, from the `nullable` flag in `shared/schemas/*.json`
+  (DW-20). A load that would write a NULL into one fails loudly rather than
+  widening the schema to fit. **Visible to the BI app**: those 144 columns
+  surface as e.g. `Int32` in ClickHouse rather than `Nullable(Int32)` — the
+  split is 199 Nullable / 144 not. `engines.yaml` is unchanged, so nothing in
+  the app's connection logic breaks, but anything pattern-matching on
+  ClickHouse type strings will see it.
 
 ### Deliberate exclusions
 

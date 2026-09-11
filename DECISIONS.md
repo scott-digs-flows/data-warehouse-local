@@ -33,6 +33,7 @@ Conflating these is what made an earlier version of the repo confusing.
 | Lakekeeper as the Iceberg catalog | Reasonable open REST catalog that takes access control seriously. No reason found to switch. |
 | Full-refresh Postgres sync | Reloads in seconds at this size. Incremental would add snapshot bookkeeping and drift bugs for no benefit. |
 | NULL and the empty string are not distinguished in the raw extract *(2026-09-11)* | `bcp` character format writes an unquoted empty field for both, so the distinction is destroyed before any loader runs — 191,778 values across 32 nullable columns are formally ambiguous. Rejected re-extracting with a NULL sentinel (a `bcp queryout` with per-column `ISNULL` mapping): it adds per-column SQL generation to the extract for a distinction that is semantically inert in a BI star schema, where "no value" is one concept. Accepted deliberately rather than engineered around. Revisit if a source arrives where empty string and NULL genuinely differ in meaning. |
+| The lake enforces the source's `NOT NULL` constraints *(2026-09-11)* | The pinned schemas carry a `nullable` flag from `INFORMATION_SCHEMA`; until now the loader read it and never used it, so all 343 Iceberg fields were `optional` and the pinned schema was documentation rather than a constraint. 144 fields are now `required`. Rejected leaving it descriptive: a constraint the storage layer does not enforce is one a future load can break silently, and this lake's whole purpose is that every engine sees the same data. **Only became possible after DW-18 and DW-19** — pinned-NOT-NULL columns actually holding NULLs went 5 → 2 → 0 as those two defects were fixed. Attempted earlier it would have failed on real data, and relaxing the constraint would have looked like the sensible fix, ratifying the corruption. Revisit if a source arrives whose declared constraints its own data violates; the answer there is to fix the extract or correct the pinned schema, not to widen the lake. |
 | Literal `NCHAR(0)` becomes the empty string at the Iceberg load boundary *(2026-09-11)* | `DimProduct`'s Spanish and French name columns hold 287 values each that are a single 0x00 byte, meaning "no translation available". They are pinned `NOT NULL`, so they were never NULLs. Rejected preserving the raw NUL (byte-faithful, but Postgres `text` rejects 0x00, pushing the workaround into one consumer) and rejected NULL (the previous behaviour — it asserts "unknown" where the source says "empty", and breaks the pinned NOT NULL contract). Empty string is safe in every engine and keeps the source's meaning. |
 
 ## Findings worth remembering
@@ -55,6 +56,14 @@ Conflating these is what made an earlier version of the repo confusing.
   any new source must state `null_values` explicitly. The general rule: the
   pinned-schema contract covers types, and *every* remaining inference the
   reader performs has to be pinned down separately and deliberately.
+- **Full-refresh loading buys schema freedom, not just simplicity.** Iceberg
+  lets you relax a field from `required` to `optional` but not the reverse,
+  since existing rows may already hold nulls — so tightening nullability on a
+  live table needs a real evolution path, or is simply refused. Because the
+  loader drops and recreates every table on every run, nullability is set at
+  creation and never evolved, and the question does not arise. Worth knowing
+  before anyone "optimises" the loader into an incremental one: that would
+  trade this away.
 - **A loader that never reads back cannot detect its own corruption.**
   `load_iceberg.py` reports row counts from the in-memory Arrow table, so both
   the `NA` corruption and a total failure of the read path were invisible to a
