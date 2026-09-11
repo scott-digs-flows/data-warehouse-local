@@ -29,17 +29,18 @@ experiments/
 truth. The schemas carry authoritative SQL Server types (precision, scale,
 nullability) and the `PascalCase → snake_case` mapping.
 
-**This, not Iceberg, is what makes new engines cheap to add.** A new stack needs
-a compose file and a ~150-line `load.py` reading those two artifacts. Every
-stack then agrees on what the data actually is, because nothing infers types
-from CSV text — inference disagrees between readers (int32 vs int64, string vs
-date, decimal handling), and that would make any cross-stack difference
-impossible to attribute.
+Every loader reads types from there rather than inferring them from CSV text,
+because inference disagrees between readers (int32 vs int64, string vs date,
+decimal handling) and would give each engine a subtly different view of the same
+bytes.
 
-Iceberg buys something *additional*: zero-copy sharing between engines running
-**at the same time**, plus snapshots and time travel. Running one engine at a
-time, a typed extract does the same job for free — which is why the default
-stack is now plain ClickHouse and Iceberg is one strategy among several.
+**The raw layer is the input to Iceberg, not an alternative to it.** This
+section used to argue the opposite — that a typed CSV extract made Iceberg
+optional, and that the default was therefore a plain single-engine stack. That
+position is **superseded**; see `DECISIONS.md`, where it is kept visible along
+with why it changed. Every engine now reads from Iceberg and no engine owns the
+data, which is what makes adding one cost a compose service and an
+`engines.yaml` entry rather than a new pipeline.
 
 ## Quickstart
 

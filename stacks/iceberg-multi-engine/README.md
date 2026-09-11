@@ -295,9 +295,9 @@ layer.
   Snowflake uppercases — so normalising once at load time removes an entire
   class of cross-engine bug. The CSV extract keeps the original casing;
   normalisation is a documented transformation in `load_iceberg.py`.
-- **Types are pinned, never inferred.** `download_adventure_works.py` writes
+- **Types are pinned, never inferred.** `shared/scripts/extract_source.py` writes
   authoritative column types from SQL Server's `INFORMATION_SCHEMA` to
-  `schemas/*.json`, and the loader uses those. CSV type inference disagrees
+  `shared/schemas/*.json`, and the loader uses those. CSV type inference disagrees
   between readers, which would give each engine a subtly different view of the
   same data.
 - **Tables are unpartitioned.** The largest is under a million rows.
@@ -317,7 +317,7 @@ layer.
 | `DatabaseLog` table | SQL Server DDL audit table, not part of the star schema. Its `XmlEvent` column has embedded newlines that `bcp` character format cannot round-trip — only 5 of 1,864 exported rows were structurally intact. |
 | 3 `varbinary` columns | Product/employee/territory photos: ~18 MB across ~900 rows, no BI value, and they carry NUL bytes that Postgres `text` rejects. |
 
-Both are enforced in [`scripts/_common.py`](scripts/_common.py). The download
+Both are enforced in [`scripts/_common.py`](scripts/_common.py). The extract
 script also verifies each CSV by parsing it and reports any ragged rows, rather
 than trusting a raw line count.
 
@@ -476,25 +476,42 @@ These all cost real debugging time; they are recorded so they only cost it once.
 
 ## Directory layout
 
+Shown from the repo root, because this stack reads the shared raw layer and
+nothing here works without it.
+
 ```
 data-warehouse-local/
-├── engines.yaml                  # contract consumed by the BI app
-├── docker-compose.yml
-├── schemas/                      # pinned column types (checked in)
-├── scripts/
-│   ├── download_adventure_works.py   # bak -> SQL Server -> bcp -> CSV + schemas
-│   ├── load_iceberg.py               # CSV -> Iceberg `raw`  (canonical loader)
-│   ├── sync_postgres.py              # Iceberg -> Postgres   (full refresh)
-│   ├── smoke_test.py                 # query every engine, compare results
-│   ├── _common.py                    # config, snake_case, retry helper
-│   └── _manifest.py                  # engines.yaml reader
-├── services/
-│   ├── clickhouse/{config.d,users.d,attach-catalog.sh}
-│   ├── duckdb-api/                   # FastAPI service
-│   ├── lakekeeper/                   # bootstrap + warehouse template
-│   ├── postgres/init-databases.sql
-│   └── trino/catalog/iceberg.properties
-├── data/                         # extracted CSVs (gitignored)
+├── pyproject.toml                    # one venv for the whole repo — which is why
+├── uv.lock                           #   `uv sync` works from this directory
+├── CLAUDE.md  DECISIONS.md  README.md
+│
+├── shared/                           # the raw layer, shared by every stack
+│   ├── data/adventure_works_dw/      # extracted CSVs (gitignored, ~182 MB)
+│   ├── schemas/                      # pinned column types (checked in, 29 files)
+│   └── scripts/
+│       ├── extract_source.py         # .bak -> SQL Server -> bcp -> CSV + schemas
+│       └── common.py                 # paths, snake_case, exclusions
+│
+├── stacks/
+│   ├── iceberg-multi-engine/         # ← you are here
+│   │   ├── engines.yaml              # contract consumed by the BI app
+│   │   ├── docker-compose.yml
+│   │   ├── .env.example              # copy to .env; credentials and ports
+│   │   ├── scripts/
+│   │   │   ├── load_iceberg.py       # CSV -> Iceberg `raw`  (canonical loader)
+│   │   │   ├── create_clickhouse_views.py  # Iceberg -> browsable `raw` views
+│   │   │   ├── sync_postgres.py      # Iceberg -> Postgres   (full refresh)
+│   │   │   ├── smoke_test.py         # query every engine, compare results
+│   │   │   ├── _common.py            # config, snake_case, retry helper
+│   │   │   └── _manifest.py          # engines.yaml reader
+│   │   └── services/
+│   │       ├── clickhouse/{config.d,users.d,attach-catalog.sh}
+│   │       ├── duckdb-api/           # FastAPI service
+│   │       ├── lakekeeper/           # bootstrap + warehouse template
+│   │       ├── postgres/init-databases.sql
+│   │       └── trino/catalog/iceberg.properties
+│   └── clickhouse/                   # off-pipeline CSV -> MergeTree; see DW-15
+│
 └── experiments/loader-comparison/    # parked: PyIceberg vs DuckDB vs DataFusion
 ```
 

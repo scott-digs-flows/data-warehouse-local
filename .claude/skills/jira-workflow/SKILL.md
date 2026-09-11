@@ -141,6 +141,18 @@ them dilute status reporting.
   Same test applies to the repo. A disproved claim in a README gets corrected in
   place; a disproved *command* gets fixed immediately, because someone will paste
   it.
+
+- **A third kind: the claim that goes stale on its own.** Some statements are
+  true when written and false later through nobody's fault — "not merged yet",
+  "currently In Progress", "this is the latest run". A closing comment saying
+  *"pushed to origin, NOT merged, no PR"* is accurate for an hour and misleading
+  forever after.
+
+  These are not corrected, because nothing was wrong. They are **timestamped or
+  phrased so they cannot rot**: "not merged **as of this comment**", or better,
+  name the commit and let the reader check — `46b003b`, which either is or is not
+  on `main` whenever they look. Prefer a fact that stays checkable over a status
+  that decays.
 - Comment on the issue when a decision is made or an approach changes, so the
   reasoning survives outside the transcript.
 - Reference the issue key in commit messages and PR titles: `DW-12: ...`.

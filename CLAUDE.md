@@ -30,7 +30,7 @@ The repo predates this commitment and does not match it yet:
 | `stacks/iceberg-multi-engine/` | Closest to the target. The real loader, catalog, and ClickHouse wiring live here. |
 | `stacks/clickhouse/` | **Off-pipeline.** Loads CSV → MergeTree directly, skipping Iceberg. Slated for removal or conversion to an Iceberg reader. |
 | `experiments/loader-comparison/` | Parked. Do not extend. |
-| `DECISIONS.md` | Records the *superseded* position that Iceberg is one strategy among several. Needs a superseding entry. |
+| `DECISIONS.md` | **Resolved (DW-16).** Iceberg is recorded as the mandatory middle layer; the old position is marked superseded and left visible rather than erased. |
 
 Treat `stacks/` — a set of parallel, self-contained strategies — as a structure
 inherited from the previous goal, not as the target shape. Converging on a
