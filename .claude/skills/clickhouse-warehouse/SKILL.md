@@ -91,12 +91,25 @@ Measured under DW-13: over HTTP, `system.tables` / `system.columns` /
 navigator needs.
 
 **Not the Postgres driver on 9005, despite it being the easier connection.**
-It executes SQL correctly, but ClickHouse's Postgres wire emulation does not
-implement `pg_catalog` — `SELECT … FROM pg_catalog.pg_class` answers
-`Database pg_catalog does not exist`, and psql's `\dt` / `\d` fail outright
-(the server cannot parse `OPERATOR(pg_catalog.~)` and drops the connection).
-Postgres drivers enumerate tables through `pg_catalog`, so the navigator stays
-empty while queries work. Use 9005 as a query fallback, not to browse.
+It executes SQL correctly and the navigator still stays empty, for two
+independent reasons:
+
+- `pg_catalog` is not a database here. Qualified `pg_catalog.pg_class` answers
+  `Database pg_catalog does not exist`. Unqualified `pg_class` / `pg_namespace`
+  / `pg_attribute` / `pg_type` do resolve, but as content-free stubs —
+  `pg_class` has no `relname` — and drivers schema-qualify, so they never reach
+  them.
+- **The parser rejects the SQL these drivers emit anyway**: bare `~`, `!~`,
+  `OPERATOR(pg_catalog.~)` and `E'...'` literals are syntax errors. Populating
+  `pg_catalog` later would not fix it. This is the more durable reason.
+
+Verified against pgjdbc 42.7.4 via `DatabaseMetaData`: `getSchemas`,
+`getTables`, `getColumns`, `getCatalogs` all fail; a plain query returns 18,484.
+
+Use 9005 as a query fallback, not to browse — and note a JDBC client needs
+`?sslmode=disable`, because ClickHouse answers the Postgres `SSLRequest` with
+`S` then drops the handshake, so the default `sslmode=prefer` fails at connect.
+Any error also kills the pgwire session.
 
 ## Failure modes
 

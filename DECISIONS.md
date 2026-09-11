@@ -58,7 +58,6 @@ Conflating these is what made an earlier version of the repo confusing.
   Generalises beyond ClickHouse: when adding an engine, test *introspection*
   separately from *querying* — the BI app needs both, and they fail
   independently (DW-13).
-
 - **Pinning types does not pin which *values* mean NULL.** A second, separate
   door for inference, and the more dangerous one because it is invisible in a
   green load. `pyarrow.csv` defaults `null_values` to a 17-token list — `NA`,

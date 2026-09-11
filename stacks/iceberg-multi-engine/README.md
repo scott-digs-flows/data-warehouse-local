@@ -151,9 +151,23 @@ choice is the wrong one.
 | Credentials | in **exactly one place** — see the Code 516 trap below |
 
 **Why not the Postgres driver on 9005, which looks easier?** It runs queries
-fine, but a navigator will stay empty: ClickHouse's Postgres wire emulation
-does not implement `pg_catalog`, and that is what Postgres drivers read to
-enumerate tables and columns.
+fine and a navigator still stays empty. Two independent reasons, and the second
+is the durable one:
+
+1. **`pg_catalog` is not a database here.** Qualified `pg_catalog.pg_class`
+   answers *"Database pg_catalog does not exist"*. Unqualified `pg_class`,
+   `pg_namespace`, `pg_attribute` and `pg_type` *do* resolve over 9005, but
+   they are content-free stubs — `pg_class` has no `relname` column at all and
+   `pg_namespace` does not list `raw` — so they cannot enumerate anything. Every
+   real driver schema-qualifies, so it never reaches them anyway.
+2. **ClickHouse's parser rejects the SQL these drivers emit**, whatever the
+   catalog contains: bare `~`, `!~`, `OPERATOR(pg_catalog.~)` and `E'...'`
+   escape-string literals are all syntax errors. So populating `pg_catalog`
+   later would not fix this.
+
+Verified by driving the real PostgreSQL JDBC driver (pgjdbc 42.7.4, what DBeaver
+and DataGrip use) through `DatabaseMetaData`: `getSchemas`, `getTables`,
+`getColumns` and `getCatalogs` **all fail**, while a plain query returns 18,484.
 
 ```bash
 # queries: fine
@@ -167,6 +181,14 @@ psql ... -c '\dt raw.*'
 psql ... -c 'SELECT count() FROM pg_catalog.pg_class'
 # DB::Exception: Database pg_catalog does not exist
 ```
+
+**Two more things about 9005 if you use it as a query fallback.** A JDBC client
+needs `?sslmode=disable`: ClickHouse answers the Postgres `SSLRequest` with `S`
+("willing") and then drops the TLS handshake, so pgjdbc's default
+`sslmode=prefer` fails at *connect* time with *"SSL error: Remote host
+terminated the handshake"* rather than falling back. (`psql` is unaffected —
+libpq negotiates differently, which is why the recipe above works.) And **any
+error kills the session**, so a typo means reconnecting.
 
 Over HTTP, by contrast, every metadata surface a tool needs answers:
 `system.tables` and `system.columns` return 29 and 343 for `raw`, as does

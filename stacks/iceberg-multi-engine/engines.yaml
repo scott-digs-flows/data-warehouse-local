@@ -112,11 +112,13 @@ engines:
       # misbehaves (see the Code 516 trap in README gotchas).
       #
       # "Not for full introspection" is now measured, not suspected (DW-13):
-      # there is no `pg_catalog` here, so `pg_catalog.pg_class` answers
-      # "Database pg_catalog does not exist" and psql's \dt drops the
-      # connection. Postgres drivers enumerate through pg_catalog, so a GUI
-      # navigator stays empty on this port while queries succeed.
+      # pg_catalog is not a database here, and the parser rejects the SQL
+      # Postgres drivers emit (~, !~, OPERATOR(pg_catalog.~), E'...') anyway.
+      # pgjdbc's getSchemas/getTables/getColumns all fail while plain queries
+      # succeed, so a GUI navigator stays empty on this port.
       # To BROWSE, use a ClickHouse driver on http_port above.
+      # A JDBC client here also needs ?sslmode=disable — ClickHouse answers
+      # SSLRequest with "S" then drops the handshake.
       pgwire_port: 9005
       user: default
       # Non-blank on purpose: with an empty password some JDBC clients send
