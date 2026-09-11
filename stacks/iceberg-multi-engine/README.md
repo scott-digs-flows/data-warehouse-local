@@ -92,6 +92,10 @@ end from a destroyed stack under DW-14 — every step below was executed in this
 order, and the two steps that used to be missing are marked.
 
 ```bash
+# Start from a checkout.
+git clone <this-repo> data-warehouse-local
+cd data-warehouse-local/stacks/iceberg-multi-engine
+
 # 0. Prerequisite, once per machine. Without these, every host-side script
 #    fails in confusing ways — the catalog advertises Docker-internal hostnames.
 #    See "Required /etc/hosts entries" above.
@@ -112,7 +116,11 @@ cp .env.example .env          # single source for all credentials and ports
 uv sync                       # add --extra duckdb-api only for the DuckDB HTTP service
 
 # 3. Lake + ClickHouse. The catalog attaches itself; there is no manual step.
+#    Do NOT add --wait here: Compose treats every exited container as a failure
+#    regardless of exit code, so --wait returns 1 on a perfectly good start
+#    ("container clickhouse-init exited (0)"). Check the attach explicitly:
 docker compose --profile clickhouse up -d
+docker logs clickhouse-init      # want: catalog attached as database 'datalake'
 
 # 4. Raw CSVs -> Iceberg `raw`
 uv run python scripts/load_iceberg.py
@@ -134,13 +142,22 @@ Expected final output:
 ✓ All engines agree on the aggregate (10 territory groups, sums matched to 2dp)
 ```
 
-**Runtime.** Steps 2–6 took **45 s** measured from a fully destroyed stack
-(`docker compose --profile all down -v`, no `.env`): compose up 28 s, Iceberg
-load 14 s, views 2 s, smoke test 1 s. Two honest caveats — that machine already
-had the Docker images and the `uv` cache, so a genuinely first-ever run adds the
-image pull (~1 GB for this profile) and the dependency download. And step 1, the
-extract, is the ~10 min one-time cost on top; it was **not** re-executed in that
-measurement because `shared/data/` was already populated.
+**Runtime.** Steps 2–6 take **about 45 s, and up to a minute** from a fully
+destroyed stack (`docker compose --profile all down -v`, no `.env`). Measured
+span across six cold runs by two people: **43–61 s** — compose up 23–31 s,
+Iceberg load 14–26 s, views ~2 s, smoke test ~1 s.
+
+The load is the variable part, and the variance is all in the *first* table:
+`adventure_works_dw_build_version` is a single row and took anywhere from 5.6 s
+to 11.4 s, while the remaining 28 tables together take ~15 s. That is namespace
+creation plus the MinIO first-object 403 retry backoff (see the gotchas), not
+anything about data volume — no speed conclusion should be drawn from it.
+
+Two caveats on the numbers: those machines already had the Docker images and the
+`uv` cache, so a genuinely first-ever run adds the image pull (~1 GB for this
+profile) and the dependency download. And step 1, the extract, is the ~10 min
+one-time cost on top; it was **not** re-executed in any of those measurements,
+because `shared/data/` was already populated.
 
 ### Beyond ClickHouse
 
@@ -399,9 +416,16 @@ These all cost real debugging time; they are recorded so they only cost it once.
 
   The gap is that **`docker compose up -d` returns 0 even when a one-shot
   service fails** (verified). So the symptom is visible but not announced: you
-  get `Code: 81 … Database datalake does not exist` at first query. To have the
-  failure surface at `up` time instead, add `--wait`, which exits 1 when a
-  one-shot fails (also verified). Otherwise check it directly:
+  get `Code: 81 … Database datalake does not exist` at first query.
+
+  **`--wait` does not fix this, despite looking like it should.** It does exit 1
+  when a one-shot fails — but it also exits 1 when every one-shot *succeeds*,
+  printing `container clickhouse-init exited (0)`, because Compose counts any
+  exited container as a failure regardless of exit code. It therefore cannot
+  distinguish the two cases and must not go in the quickstart, where it would
+  make every good run look broken. (An earlier version of this note recommended
+  it on the strength of the failure case alone; corrected under DW-14.) Check
+  directly instead:
   ```bash
   docker logs clickhouse-init          # want: "catalog attached as database 'datalake'"
   docker exec clickhouse clickhouse-client --query 'SHOW TABLES FROM datalake' | wc -l   # want 29
