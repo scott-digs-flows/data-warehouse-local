@@ -275,11 +275,31 @@ def check_nullability_enforced(src, lake, ctx) -> Result:
     """
     import load_iceberg
     cols = [{"name": "k", "sql_type": "int", "precision": 10, "scale": 0, "nullable": False}]
-    tbl = pa.table({"k": pa.array([1, None, 3], pa.int32())})
+
+    # Positive half: a clean table must cast AND come out actually non-nullable.
+    # Without this, deleting the function's body would still "pass" the negative
+    # half below, because an AttributeError looks like a rejection.
     try:
-        load_iceberg.apply_pinned_nullability(tbl, cols)
+        ok = load_iceberg.apply_pinned_nullability(
+            pa.table({"k": pa.array([1, 2, 3], pa.int32())}), cols)
     except Exception as e:
-        return Result(PASS, f"a NULL in a pinned NOT NULL column is rejected ({type(e).__name__})")
+        return Result(FAIL, f"clean data was rejected: {type(e).__name__}: {e}")
+    if ok.schema.field("k").nullable:
+        return Result(FAIL, "pinned NOT NULL did not produce a non-nullable field")
+
+    # Negative half: the catch is deliberately NARROW. Catching bare Exception
+    # made a KeyError, an AttributeError or a NotImplementedError read as
+    # "rejected", so drift in the function would have been reported as a pass.
+    try:
+        load_iceberg.apply_pinned_nullability(
+            pa.table({"k": pa.array([1, None, 3], pa.int32())}), cols)
+    except (pa.ArrowInvalid, pa.ArrowNotImplementedError, ValueError) as e:
+        return Result(PASS, f"NULL into a pinned NOT NULL column is rejected "
+                            f"({type(e).__name__})",
+                      ["tests the loader's cast in-process, not the lake's stored schema"])
+    except Exception as e:
+        return Result(FAIL, f"rejected, but not for the right reason: "
+                            f"{type(e).__name__}: {e}")
     return Result(FAIL, "apply_pinned_nullability() ACCEPTED a NULL in a NOT NULL column")
 
 
@@ -334,6 +354,65 @@ def check_source_values(src, lake, ctx) -> Result:
     if bad:
         return Result(FAIL, f"{len(bad)} invariant(s) broken", bad[:10])
     return Result(PASS, f"{checked} source-derived value invariant(s) hold")
+
+
+def check_value_digests(src, lake, ctx) -> Result:
+    """Every cell of every column, compared — not just counts, types and flags.
+
+    Without this the suite passes on wholesale value corruption: independent
+    review replaced an entire string column, zeroed an entire int column, and
+    shifted every date in `dim_date` by one day, and all ten other checks stayed
+    green. 172 of 343 columns had no value-level check at all, and `dim_date` is
+    the conformed dimension every fact joins to.
+
+    Method: an order-independent digest per column — the summed hash of every
+    value — computed from the source CSV parsed through the pinned schema, and
+    from the lake. Order-independent because nothing guarantees the lake
+    preserves CSV row order; a sort would cost more and buy little.
+
+    Two honest limits, both stated in the run's NOT_CHECKED output:
+
+    * A *compensating swap* — two rows exchanging values within one column —
+      leaves the multiset unchanged and is invisible here, exactly as it is to
+      `decimal_exactness`'s sums.
+    * The source side is parsed with the loader's own `read_csv`, so this
+      compares the lake against a *re-parse*, which detects corruption of the
+      lake but not a bug in parsing itself. That is deliberate: parse bugs are
+      what `null_reconciliation` and `source_values` catch, and they work from
+      the raw CSV text precisely so they do not share this blind spot.
+    """
+    import load_iceberg
+    bad, n_cols, n_cells = [], 0, 0
+    for path in list_csv_files():
+        spec = pinned(path.stem)
+        name = spec["table"]
+        want_tbl = load_iceberg.read_csv(path, spec)
+        got_tbl = lake[name].arrow
+        for col in want_tbl.schema.names:
+            n_cols += 1
+            cw, cg = want_tbl.column(col), got_tbl.column(col)
+            n_cells += len(cw)
+            if len(cw) != len(cg):
+                bad.append(f"{name}.{col}: {len(cg)} values in the lake, {len(cw)} in source")
+                continue
+            # Fast path: a full-refresh load preserves CSV row order, so the
+            # arrays are usually positionally equal and Arrow can settle it in
+            # C++. Only fall back to the order-independent digest — which costs
+            # a Python pass over every cell — when that fails, so an unexpected
+            # reordering is still reported correctly rather than as a difference.
+            if cw.equals(cg):
+                continue
+            w, g = cw.to_pylist(), cg.to_pylist()
+            dw = sum(hash(v) for v in w) % (2 ** 63)
+            dg = sum(hash(v) for v in g) % (2 ** 63)
+            if dw != dg:
+                diffs = [(i, a, b) for i, (a, b) in enumerate(zip(w, g)) if a != b][:2]
+                where = "; ".join(f"row {i}: source={a!r} lake={b!r}" for i, a, b in diffs)
+                bad.append(f"{name}.{col}: values differ ({where or 'multiset differs'})")
+    if bad:
+        return Result(FAIL, f"{len(bad)} of {n_cols} columns differ", bad[:10])
+    return Result(PASS, f"all {n_cols} columns match value-for-value ({n_cells:,} cells)",
+                  ["order-independent digest: a compensating swap within a column is not caught"])
 
 
 def check_referential_integrity(src, lake, ctx) -> Result:
@@ -415,6 +494,13 @@ def check_cross_engine(src, lake, ctx) -> Result:
                       [f"agreed: {', '.join(agree)}"] if agree else [])
     if not agree:
         return Result(SKIP, "no engine reachable", [f"not reached: {a}" for a in absent])
+    if absent and ctx.get("strict"):
+        # --strict means "every engine the manifest advertises must answer".
+        # Previously this only failed when ALL engines were down, so a missing
+        # Postgres sync passed a --strict run green.
+        return Result(FAIL, f"--strict: {len(absent)} manifest engine(s) did not answer",
+                      [f"not reached: {a}" for a in absent] +
+                      [f"agreed: {', '.join(agree)}"])
     notes = [f"not reached (reported, not ignored): {', '.join(absent)}"] if absent else []
     return Result(PASS, f"{len(agree)} engine(s) agree on {want:,} rows: " + ", ".join(agree), notes)
 
@@ -427,6 +513,7 @@ CHECKS: dict[str, Callable] = {
     "nullability_enforced": check_nullability_enforced,
     "null_reconciliation": check_null_reconciliation,
     "source_values": check_source_values,
+    "value_digests": check_value_digests,
     "referential_integrity": check_referential_integrity,
     "decimal_exactness": check_decimal_exactness,
     "cross_engine": check_cross_engine,
@@ -435,6 +522,16 @@ CHECKS: dict[str, Callable] = {
 # Stated on every run. A suite that implies a passing run means "everything is
 # verified" is worse than one that says where its edges are.
 NOT_CHECKED = [
+    "A compensating swap — two rows exchanging values within one column. Both "
+    "value_digests and decimal_exactness compare multisets and sums, which such a "
+    "swap leaves unchanged.",
+    "Referential integrity beyond the 6 joins listed in check_referential_integrity. "
+    "fact_reseller_sales' other foreign keys and the 4 self-referencing parent_*_key "
+    "hierarchies are not covered.",
+    "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
+    "compares a grouped SUM; engines could disagree on every decimal and pass here.",
+    "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "
+    "the loader's cast in-process; nullability_flags tests the stored schema.",
     "Whether a source NULL differs from a source empty string — bcp writes both as an "
     "empty field, so the distinction is gone before the lake sees it (accepted, DECISIONS.md).",
     "That a GUI can browse the warehouse. Only the metadata queries a navigator issues "
@@ -475,10 +572,14 @@ def main() -> None:
     # The lake is this suite's subject, not an optional dependency. If it cannot
     # be reached there is nothing to verify, and saying so beats reporting a
     # tidy screen of skips — that is how a suite becomes decorative.
-    catalog = RestCatalog(
-        CATALOG_NAME, **{"uri": CATALOG_URI, "warehouse": WAREHOUSE, **s3_properties()}
-    )
     try:
+        # Construction, not just list_tables, must sit inside the try:
+        # RestCatalog.__init__ fetches /catalog/v1/config, so an unreachable
+        # catalog raises here. Building it outside made this handler dead code
+        # and leaked a raw traceback instead of the guidance below.
+        catalog = RestCatalog(
+            CATALOG_NAME, **{"uri": CATALOG_URI, "warehouse": WAREHOUSE, **s3_properties()}
+        )
         tables = catalog.list_tables((NAMESPACE,))
     except Exception as e:
         console.print(f"[bold red]Cannot reach the lake.[/bold red] {type(e).__name__}: {e}")
@@ -501,7 +602,7 @@ def main() -> None:
     lake = read_lake(catalog)
     t_lake = time.perf_counter() - t0 - t_src
 
-    ctx = {"catalog": catalog}
+    ctx = {"catalog": catalog, "strict": args.strict}
     results: dict[str, tuple[Result, float]] = {}
     for name in names:
         s = time.perf_counter()

@@ -169,17 +169,24 @@ what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
 `load_iceberg.py` run.
 
 ```bash
-uv run python scripts/verify_lake.py            # ~16 s, exits non-zero on a bad lake
-uv run python scripts/verify_lake.py --list     # the ten checks
+uv run python scripts/verify_lake.py            # ~17 s, exits non-zero on a bad lake
+uv run python scripts/verify_lake.py --list     # the eleven checks
 uv run python scripts/verify_lake.py --check null_reconciliation
 uv run python scripts/verify_lake.py --strict   # an unreachable engine fails too
 ```
 
-It reads the source once and the lake once, then runs ten checks over those two
-summaries: row counts, type fidelity, nullability flags *and* that the constraint
-still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
-invariants, referential integrity including the three role-playing date keys,
-decimal exactness, and cross-engine agreement.
+It reads the source once and the lake once, then runs eleven checks over those
+two summaries: row counts, type fidelity, nullability flags *and* that the
+constraint still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
+invariants, **a value-for-value digest of all 343 columns**, referential
+integrity including the three role-playing date keys, decimal exactness, and
+cross-engine agreement.
+
+The value digest earns its place: without it, counts and types and flags all pass
+while an entire column's contents are wrong. Independent review replaced a whole
+string column, zeroed an int column, and shifted every date in `dim_date` by one
+day — the conformed dimension every fact joins to — and every other check stayed
+green.
 
 **Expectations are derived from the source on every run, not hardcoded**, so the
 checks do not rot as the data changes — the one exception is `known_baseline`,
