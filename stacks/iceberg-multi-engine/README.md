@@ -225,6 +225,19 @@ These all cost real debugging time; they are recorded so they only cost it once.
   then settles. Reproduced identically under s3fs and PyArrowFileIO, and under
   two MinIO releases. `with_s3_retry()` in `_common.py` absorbs it; only wrap
   genuinely idempotent operations.
+- **Retrying a read only works if the retry re-loads the table.** Following on
+  from the 403s above: Lakekeeper vends per-table S3 signing config, and
+  PyIceberg binds it to the `Table` object at `load_table()` time. So retrying a
+  *cached* table's `.scan()` never recovers — measured 15 consecutive 403s on
+  one table object, while re-creating the catalog settled on the 3rd attempt.
+  Keep `load_table()` **inside** the retried closure:
+  ```python
+  with_s3_retry(lambda: catalog.load_table((NAMESPACE, name)).scan().count(), name)
+  ```
+  `sync_postgres.py` already does this. Hoisting the `load_table()` out to avoid
+  "redundant" work is what reintroduces the failure. Note the loader reports row
+  counts from the in-memory Arrow table and never reads back, so a read-path
+  breakage like this is invisible to a green `load_iceberg.py` run.
 - **ClickHouse can write to Iceberg, but only just.** `INSERT` and
   `ALTER … DELETE` work with `allow_insert_into_iceberg=1` (beta/experimental
   gates) and produce genuine Iceberg snapshots — verified `append` then

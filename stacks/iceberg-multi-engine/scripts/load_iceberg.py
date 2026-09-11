@@ -1,8 +1,8 @@
 """Load the AdventureWorks CSV extract into Iceberg. The one canonical loader.
 
-Reads schemas/<Table>.json (written by download_adventure_works.py) rather than
-inferring types from CSV text, then writes to the `raw` namespace with
-snake_case identifiers.
+Reads shared/schemas/<Table>.json (written by shared/scripts/extract_source.py)
+rather than inferring types from CSV text, then writes to the `raw` namespace
+with snake_case identifiers.
 
 Why pinned schemas: every CSV reader infers types differently — int32 vs int64,
 string vs date, decimal vs float. Left to inference, each engine would end up
@@ -47,8 +47,9 @@ NS = (NAMESPACE,)
 # SQL Server type -> Arrow type.
 #
 # Iceberg has no 8- or 16-bit integer, so tinyint/smallint widen to int32.
-# Binary columns (product/employee photos) are kept as the hex text bcp emits —
-# useless for BI, but dropping source columns silently would be worse.
+# Binary columns never reach this function: wanted_columns() drops them via
+# EXCLUDED_COLUMN_TYPES — a deliberate, documented narrowing of the source
+# (the product/employee/territory photo blobs). See _common.py for why.
 def arrow_type(col: dict) -> pa.DataType:
     t = col["sql_type"]
     if t == "bit":
@@ -83,7 +84,7 @@ def load_schema(csv_path: Path) -> dict:
     path = SCHEMA_DIR / f"{csv_path.stem}.json"
     if not path.exists():
         raise FileNotFoundError(
-            f"no pinned schema at {path}. Re-run scripts/download_adventure_works.py."
+            f"no pinned schema at {path}. Re-run shared/scripts/extract_source.py."
         )
     return json.loads(path.read_text())
 
@@ -187,7 +188,7 @@ def main() -> None:
         if missing:
             console.print(f"[red]No CSV for:[/red] {', '.join(sorted(missing))}")
     if not csv_files:
-        console.print("[red]Nothing to load.[/red] Run scripts/download_adventure_works.py first.")
+        console.print("[red]Nothing to load.[/red] Run shared/scripts/extract_source.py first.")
         raise SystemExit(1)
 
     catalog = get_catalog()

@@ -56,6 +56,17 @@ def with_s3_retry(fn: Callable[[], T], what: str) -> T:
     after a few operations.
 
     Callers must only pass operations that are safe to repeat.
+
+    For *reads*, the closure must re-enter catalog.load_table() on every attempt:
+
+        with_s3_retry(lambda: catalog.load_table(ident).scan().count(), name)
+
+    Lakekeeper vends per-table S3 signing config (remote signing) that is bound to
+    the Table object it was loaded into. Retrying a *cached* table's .scan() never
+    recovers — it fails identically forever (measured: 15 consecutive 403s) —
+    while re-loading the table settles within a few attempts. Hoisting the
+    load_table() call out of the closure to "avoid redundant work" reintroduces
+    the hang, so keep it inside.
     """
     last: Exception | None = None
     for attempt in range(MAX_ATTEMPTS):
