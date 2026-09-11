@@ -304,8 +304,14 @@ These all cost real debugging time; they are recorded so they only cost it once.
   future source containing `null` or `NaN` as real text does not reintroduce it.
 - **NULL and the empty string are indistinguishable throughout the lake.** `bcp`
   character format writes an unquoted empty field for both, so the distinction
-  is gone before the loader runs — no loader change can recover it. Measured:
-  146 string columns, **0 empty strings, 192,916 NULLs**. Tracked as **DW-19**.
+  is gone before the loader runs — no loader change can recover it, which is why
+  this is an extract-layer question. Tracked as **DW-19**, still open. Measured
+  across 146 string columns: **0 empty strings**, and of the string NULLs,
+  **191,778 across 32 columns are genuinely ambiguous** (the column is pinned
+  nullable, so the empty field could have been either) while **574 across 2
+  columns are provably wrong** — `dim_product.spanish_product_name` and
+  `french_product_name` are pinned `nullable=false`, so SQL Server cannot have
+  held a NULL there. Those 574 are the NCHAR(0) case above.
 
 ## Directory layout
 
