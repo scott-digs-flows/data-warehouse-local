@@ -44,7 +44,7 @@ SQL Server → Arrow, as implemented in `arrow_type()`:
 | `date` | `date32()` | |
 | `datetime`, `datetime2`, `smalldatetime` | `timestamp("us")` | **Microseconds** — Iceberg rejects nanosecond precision |
 | `datetimeoffset` | `timestamp("us", tz="UTC")` | |
-| `time` | `time64("us")` | ClickHouse has no native equivalent; becomes String there |
+| `time` | `time64("us")` | Untested — no source dataset has a `time` column yet. Do not assume it becomes String in ClickHouse: 26.7 has `Time`/`Time64` (DW-12) |
 | anything else | `string()` | |
 
 When adding a source with types not in this table, extend the mapping

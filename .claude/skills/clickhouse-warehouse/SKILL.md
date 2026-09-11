@@ -136,7 +136,7 @@ ClickHouse. Verified column-by-column across all 343 columns under DW-12:
 | `money` / `smallmoney` | `decimal(19,4)` / `decimal(10,4)` | `Decimal(19, 4)` / `Decimal(10, 4)` |
 | `date` | `date` | `Date32` |
 | `datetime*` | `timestamp` (µs) | `DateTime64(6)` |
-| `time` | `time` | `String` — ClickHouse has no time-of-day type |
+| `time` | `time` | **untested — see below** |
 
 Columns the pinned schema marks nullable wrap in `Nullable(...)`; the 144 marked
 `NOT NULL` do not (DW-20).
@@ -155,10 +155,29 @@ reach ClickHouse as `Int32`. Measured: all 128 integer columns in the lake are
 > described the MergeTree path too.
 
 **No type collapses unexpectedly.** Across all 343 columns, 0 differ from the
-pinned schema and 0 non-string source type surfaces as `String`. Note that
-AdventureWorks DW contains **no `time` columns at all**, so the `time` → `String`
-row above is carried from the type mapping, not observed here — a future source
-with `time` columns would be the first real test of it.
+pinned schema and 0 non-string source type surfaces as `String`.
+
+**The `time` row is genuinely unknown, and the old claim about it was wrong.**
+AdventureWorks DW contains **no `time` columns at all** (census: `nvarchar` 132,
+`int` 90, `money` 25, `tinyint` 23, `datetime` 17, `smallint` 15, `nchar` 12,
+`float` 10, `date` 9, `bit` 6, `real` 2, `char` 1, `varchar` 1), so nothing here
+exercises it. This skill used to assert `time` becomes `String` "because
+ClickHouse has no time-of-day type" — that reason is false on the version this
+stack runs:
+
+```
+$ docker exec clickhouse clickhouse-client --query \
+    "SELECT name FROM system.data_type_families WHERE name ILIKE 'time%'"
+TIMESTAMP
+Time
+Time64
+$ ... --query "SELECT toTypeName(toTime64('12:34:56.789', 3))"
+Time64(3)
+```
+
+So a future source with `time` columns is at least as likely to surface as
+`Time64` as `String`. Treat the landing type as unmeasured until a dataset with
+`time` columns actually loads. Verified on ClickHouse 26.7.3.19 under DW-12.
 
 ## The engines.yaml contract
 
