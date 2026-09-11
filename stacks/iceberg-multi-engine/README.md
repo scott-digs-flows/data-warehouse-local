@@ -277,6 +277,23 @@ These all cost real debugging time; they are recorded so they only cost it once.
 - **ClickHouse `initdb.d` scripts run only on a first-ever start.** One failed
   boot leaves the catalog permanently unattached with no obvious symptom, so
   catalog attachment is an idempotent one-shot compose service instead.
+- **Catalog attachment cannot half-succeed, but a failed attach is not
+  surfaced by `up`.** Measured under DW-11. `CREATE DATABASE … DataLakeCatalog`
+  validates eagerly against Lakekeeper, so a broken attach leaves **no**
+  database rather than an empty or half-working one — a wrong URI fails with
+  `Code: 198 … DNS_ERROR` and a wrong warehouse with `Code: 86 … 404 NoSuchWarehouseException`,
+  and in both cases `system.databases` has no `datalake` row. `attach-catalog.sh`
+  runs `set -euo pipefail`, so `clickhouse-init` exits non-zero.
+
+  The gap is that **`docker compose up -d` returns 0 even when a one-shot
+  service fails** (verified). So the symptom is visible but not announced: you
+  get `Code: 81 … Database datalake does not exist` at first query. To have the
+  failure surface at `up` time instead, add `--wait`, which exits 1 when a
+  one-shot fails (also verified). Otherwise check it directly:
+  ```bash
+  docker logs clickhouse-init          # want: "catalog attached as database 'datalake'"
+  docker exec clickhouse clickhouse-client --query 'SHOW TABLES FROM datalake' | wc -l   # want 29
+  ```
 - **`network … not found` on `up`.** Containers store the network *ID* they were
   created with. If `warehouse-net` was recreated since — a `down` and later
   `up`, or a Docker restart — older containers still point at the dead ID, and
