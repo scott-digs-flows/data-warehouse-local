@@ -135,6 +135,20 @@ def read_csv(csv_path: Path, spec: dict) -> pa.Table:
             include_columns=[c["source_name"] for c in cols],
             # bcp writes NULL as an empty field, for text columns too.
             strings_can_be_null=True,
+            # An empty field is the ONLY thing that means NULL here. PyArrow
+            # otherwise applies a 17-token default list -- "NA", "N/A", "null",
+            # "NaN", "#N/A" and friends -- and silently nulls any value matching
+            # one. AdventureWorks uses "NA" as a real value, which cost 564 rows
+            # across 5 columns: dim_product.color (254) and .size_range (307),
+            # and all three text columns of dim_sales_territory row 11, the star
+            # schema's unknown member.
+            #
+            # Pinning types does not pin which *values* mean NULL, so this has to
+            # be stated explicitly or inference creeps back in through the side
+            # door. Keep it exhaustive rather than removing just the tokens that
+            # bite today -- a future source containing "null" or "NaN" as real
+            # text would otherwise hit the identical bug. See DW-18.
+            null_values=[""],
         ),
     )
     tbl = tbl.rename_columns([c["name"] for c in cols])

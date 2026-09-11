@@ -289,15 +289,19 @@ These all cost real debugging time; they are recorded so they only cost it once.
   *not* NULLs that `bcp -k` mangled — both columns are pinned `nullable=false`,
   so they are literal NCHAR(0) values in the source, and converting them to NULL
   is a lossy narrowing. Tracked as **DW-19**.
-- **The loader turns the literal source string `NA` into NULL.** Open defect,
-  tracked as **DW-18**. `pyarrow.csv` defaults `null_values` to a 17-token list
-  that includes `NA`, `N/A`, `null` and `NaN`, and the loader passes
-  `strings_can_be_null=True` without overriding it. AdventureWorks uses `NA` as
-  a real value, so **564 source values across 5 columns are currently NULL in
-  the lake** — `dim_product.color` (254), `dim_product.size_range` (307), and
-  all three text columns of `dim_sales_territory` row 11, the star schema's
-  unknown member. Pinning *types* does not pin *which values mean NULL*; the fix
-  is an explicit `null_values=[""]`.
+- **`pyarrow.csv` nulls the literal string `NA` unless you stop it.** Fixed
+  under **DW-18**; do not undo it. PyArrow defaults `null_values` to a 17-token
+  list including `NA`, `N/A`, `null`, `NaN` and `#N/A`, and silently nulls any
+  value matching one. AdventureWorks uses `NA` as a real value, so this cost
+  **564 values across 5 columns** — `dim_product.color` (254),
+  `dim_product.size_range` (307), and all three text columns of
+  `dim_sales_territory` row 11, the star schema's unknown member. The loader now
+  passes an explicit `null_values=[""]`, because an empty field is the only
+  thing `bcp` writes for NULL. **Pinning *types* does not pin *which values mean
+  NULL*** — that is a second, separate place inference can creep in, and it is
+  invisible in a green load. An audit of all 16 non-empty tokens across all 29
+  tables found only `NA` live today, but the fix is deliberately exhaustive so a
+  future source containing `null` or `NaN` as real text does not reintroduce it.
 - **NULL and the empty string are indistinguishable throughout the lake.** `bcp`
   character format writes an unquoted empty field for both, so the distinction
   is gone before the loader runs — no loader change can recover it. Measured:
