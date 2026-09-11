@@ -33,10 +33,12 @@ an engine without going through Iceberg.
 | `experiments/loader-comparison/` | Parked. Do not extend. |
 | `DECISIONS.md` | **Resolved (DW-16).** Iceberg is recorded as the mandatory middle layer; the old position is marked superseded and left visible rather than erased. |
 
-Treat `stacks/` — a set of parallel, self-contained strategies — as a structure
-inherited from the previous goal, not as the target shape. Converging on a
-single pipeline is tracked work, not something to do opportunistically
-mid-task.
+`stacks/iceberg-multi-engine/` is the only stack, and the plural is now
+historical. Engines live inside it behind compose profiles — that is the
+extension point. **A new engine is a compose service plus an `engines.yaml`
+entry; it is never a new stack, and never its own loader.** A second stack
+would by construction be a second answer to what the data is, which is what
+DW-15 removed.
 
 ## Invariants
 
