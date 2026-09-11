@@ -64,8 +64,12 @@ Engines genuinely disagree about how an Iceberg namespace surfaces. This is why
 ## Connecting
 
 ```bash
-# HTTP
-curl "http://localhost:8123/?query=SELECT%20count()%20FROM%20raw.dim_customer"
+# HTTP — credentials are required; without -u this fails with
+# "Code: 194 ... Authentication failed". The password is deliberately
+# non-blank (see the Code 516 double-auth trap below), so there is no
+# credential-free HTTP route.
+curl -u default:clickhouse \
+  "http://localhost:8123/?query=SELECT%20count()%20FROM%20raw.dim_customer"
 
 # clickhouse-client in the container
 docker exec clickhouse clickhouse-client \

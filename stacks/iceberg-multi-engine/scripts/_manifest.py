@@ -13,9 +13,14 @@ from typing import Any
 
 import yaml
 
-from _common import REPO_ROOT
+from _common import STACK_ROOT
 
-MANIFEST_PATH = REPO_ROOT / "engines.yaml"
+# engines.yaml is stack-local: each stack owns its own manifest, the way it
+# owns its own .env and compose project name. This resolved from the repo
+# root instead -- one level too high -- so no manifest was ever found and
+# smoke_test.py could not run at all. Only shared/ artifacts (the raw data
+# and the pinned schemas) belong to the repo root.
+MANIFEST_PATH = STACK_ROOT / "engines.yaml"
 
 
 @dataclass
@@ -50,12 +55,18 @@ class Manifest:
     version: int
     dataset: dict[str, Any]
     engines: list[Engine]
+    # Which file this came from, so errors name the manifest actually read
+    # rather than whatever the module-level default happened to be.
+    path: Path | None = None
 
     def __getitem__(self, name: str) -> Engine:
         for e in self.engines:
             if e.name == name:
                 return e
-        raise KeyError(f"no engine named {name!r} in {MANIFEST_PATH.name}")
+        raise KeyError(
+            f"no engine named {name!r} in {(self.path or MANIFEST_PATH).name}. "
+            f"Known: {', '.join(self.names)}"
+        )
 
     @property
     def names(self) -> list[str]:
@@ -65,7 +76,16 @@ class Manifest:
         return [e for e in self.engines if e.tier == tier]
 
 
-def load(path: Path = MANIFEST_PATH) -> Manifest:
+def load(path: Path | None = None) -> Manifest:
+    """Read the manifest. Defaults to this stack's engines.yaml.
+
+    The default is resolved here rather than bound in the signature: a default
+    argument is evaluated once, at import time, so `path=MANIFEST_PATH` would
+    freeze whatever the module-level value was then and silently ignore any
+    later reassignment. This file is the reference implementation the BI app
+    reimplements in its own codebase, so the shape is worth getting right.
+    """
+    path = path or MANIFEST_PATH
     raw = yaml.safe_load(path.read_text())
     engines = [
         Engine(
@@ -82,4 +102,5 @@ def load(path: Path = MANIFEST_PATH) -> Manifest:
         )
         for e in raw["engines"]
     ]
-    return Manifest(version=raw["version"], dataset=raw["dataset"], engines=engines)
+    return Manifest(version=raw["version"], dataset=raw["dataset"], engines=engines,
+                    path=path)
