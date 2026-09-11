@@ -83,6 +83,27 @@ Conflating these is what made an earlier version of the repo confusing.
   values to non-nullable` and fails the load loudly (DW-20). Then read back and
   reconcile against the source.
 
+- **Naming convention got 39 of 44 foreign keys right — and the 5 it missed are
+  the interesting ones.** The `*_key` convention was trusted to derive the star
+  schema's joins. Extracting `sys.foreign_keys` turned that assertion into a
+  measurement (DW-25), and the two sets differ in *both* directions despite both
+  numbering 44:
+
+  * 4 declared FKs are the `parent_*_key` self-references, which the derivation
+    routes to a hierarchy check instead — a different check, not a gap.
+  * 1 is a **composite**: `fact_internet_sales_reason` joins
+    `fact_internet_sales` on `(sales_order_number, sales_order_line_number)`.
+    No single-column naming rule can express it, and nothing checked it before.
+  * 5 edges the convention *invents* — plausible relationships like
+    `fact_survey_response.product_category_key` that AdventureWorks never
+    declared as constraints. The data satisfies them, so they are checked
+    anyway, but they are not contractual.
+
+  The lesson generalises past this dataset: **convention is a good default and a
+  bad oracle.** Derivation covers the common case cheaply and fails loudly on a
+  key it cannot place; extraction is what tells you whether the derivation is
+  right. Keeping both, and diffing them, is worth more than either alone.
+
 - **A wire protocol that runs queries is not therefore browsable.**
   ClickHouse's Postgres wire emulation on 9005 executes SQL correctly, so it
   looks like the obvious route for a GUI — and this repo recommended it as

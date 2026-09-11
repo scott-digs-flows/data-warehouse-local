@@ -304,6 +304,80 @@ def table_columns(table: TableRef) -> list[dict]:
     return cols
 
 
+FK_PATH = SCHEMA_DIR.parent / "foreign_keys.json"
+
+
+def foreign_keys() -> list[dict]:
+    """Authoritative foreign keys from sys.foreign_keys.
+
+    The pinned schemas carry types; this carries relationships. Both are
+    extracted from the source rather than inferred, for the same reason:
+    inference disagrees with itself. A naming convention resolves most of this
+    star schema, but provably not all of it — `fact_internet_sales_reason` joins
+    `fact_internet_sales` on a two-column composite, and
+    `new_fact_currency_rate.currency_id` references a natural key rather than a
+    surrogate. Neither shape is expressible as `<stem>_key -> dim_<stem>`.
+
+    Grouped by constraint, so a composite arrives as a column *list* rather than
+    being flattened into unrelated single-column edges.
+    """
+    out = in_container_sqlcmd(
+        "SET NOCOUNT ON; "
+        "SELECT fk.name, ps.name, pt.name, pc.name, rs.name, rt.name, rc.name, "
+        "  fkc.constraint_column_id "
+        "FROM sys.foreign_keys fk "
+        "JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id "
+        "JOIN sys.tables  pt ON pt.object_id = fk.parent_object_id "
+        "JOIN sys.schemas ps ON ps.schema_id = pt.schema_id "
+        "JOIN sys.columns pc ON pc.object_id = pt.object_id AND pc.column_id = fkc.parent_column_id "
+        "JOIN sys.tables  rt ON rt.object_id = fk.referenced_object_id "
+        "JOIN sys.schemas rs ON rs.schema_id = rt.schema_id "
+        "JOIN sys.columns rc ON rc.object_id = rt.object_id AND rc.column_id = fkc.referenced_column_id "
+        "ORDER BY fk.name, fkc.constraint_column_id",
+        db=DB_NAME,
+    )
+    grouped: dict[str, dict] = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if not line or line.startswith("-") or "|" not in line:
+            continue
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) < 8:
+            continue
+        name, pschema, ptable, pcol, rschema, rtable, rcol, _ord = parts[:8]
+        # A constraint touching an excluded table cannot be checked downstream,
+        # so recording it would promise coverage the lake cannot deliver.
+        if ptable in EXCLUDED_TABLES or rtable in EXCLUDED_TABLES:
+            continue
+        fk = grouped.setdefault(name, {
+            "constraint": name,
+            "source_from_table": f"{pschema}.{ptable}",
+            "from_table": snake_case(ptable),
+            "from_columns": [],
+            "source_to_table": f"{rschema}.{rtable}",
+            "to_table": snake_case(rtable),
+            "to_columns": [],
+        })
+        fk["from_columns"].append(snake_case(pcol))
+        fk["to_columns"].append(snake_case(rcol))
+    # Sorted so two extracts are byte-identical; sqlcmd row order is not a contract.
+    return sorted(grouped.values(),
+                  key=lambda f: (f["from_table"], f["from_columns"], f["to_table"]))
+
+
+def write_foreign_keys(fks: list[dict]) -> Path:
+    """Persist the FK set as a checked-in artifact, like the pinned schemas."""
+    FK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    FK_PATH.write_text(json.dumps({
+        "source_database": DB_NAME,
+        "note": "Authoritative foreign keys from sys.foreign_keys. Relationships are "
+                "extracted, not inferred from naming — see verify_lake.py's "
+                "foreign_key_oracle check.",
+        "foreign_keys": fks,
+    }, indent=2) + "\n")
+    return FK_PATH
+
+
 def write_schema(table: TableRef, columns: list[dict]) -> Path:
     """Persist column metadata to schemas/<Table>.json for the loader to pin."""
     SCHEMA_DIR.mkdir(parents=True, exist_ok=True)
@@ -377,6 +451,10 @@ def main() -> None:
                 )
             else:
                 console.print(f"  → {csv_path.name}  ({rows:,} rows)")
+        fks = foreign_keys()
+        write_foreign_keys(fks)
+        console.print(f"[cyan]foreign keys[/cyan] {len(fks)} constraints -> {FK_PATH.name}")
+
     # Cleanup pipe intermediates.
     if RAW_DIR.exists():
         shutil.rmtree(RAW_DIR)

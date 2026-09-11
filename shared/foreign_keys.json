@@ -1,0 +1,580 @@
+{
+  "source_database": "AdventureWorksDW2022",
+  "note": "Authoritative foreign keys from sys.foreign_keys. Relationships are extracted, not inferred from naming \u2014 see verify_lake.py's foreign_key_oracle check.",
+  "foreign_keys": [
+    {
+      "constraint": "FK_DimAccount_DimAccount",
+      "source_from_table": "dbo.DimAccount",
+      "from_table": "dim_account",
+      "from_columns": [
+        "parent_account_key"
+      ],
+      "source_to_table": "dbo.DimAccount",
+      "to_table": "dim_account",
+      "to_columns": [
+        "account_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimCustomer_DimGeography",
+      "source_from_table": "dbo.DimCustomer",
+      "from_table": "dim_customer",
+      "from_columns": [
+        "geography_key"
+      ],
+      "source_to_table": "dbo.DimGeography",
+      "to_table": "dim_geography",
+      "to_columns": [
+        "geography_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimDepartmentGroup_DimDepartmentGroup",
+      "source_from_table": "dbo.DimDepartmentGroup",
+      "from_table": "dim_department_group",
+      "from_columns": [
+        "parent_department_group_key"
+      ],
+      "source_to_table": "dbo.DimDepartmentGroup",
+      "to_table": "dim_department_group",
+      "to_columns": [
+        "department_group_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimEmployee_DimEmployee",
+      "source_from_table": "dbo.DimEmployee",
+      "from_table": "dim_employee",
+      "from_columns": [
+        "parent_employee_key"
+      ],
+      "source_to_table": "dbo.DimEmployee",
+      "to_table": "dim_employee",
+      "to_columns": [
+        "employee_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimEmployee_DimSalesTerritory",
+      "source_from_table": "dbo.DimEmployee",
+      "from_table": "dim_employee",
+      "from_columns": [
+        "sales_territory_key"
+      ],
+      "source_to_table": "dbo.DimSalesTerritory",
+      "to_table": "dim_sales_territory",
+      "to_columns": [
+        "sales_territory_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimGeography_DimSalesTerritory",
+      "source_from_table": "dbo.DimGeography",
+      "from_table": "dim_geography",
+      "from_columns": [
+        "sales_territory_key"
+      ],
+      "source_to_table": "dbo.DimSalesTerritory",
+      "to_table": "dim_sales_territory",
+      "to_columns": [
+        "sales_territory_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimOrganization_DimCurrency",
+      "source_from_table": "dbo.DimOrganization",
+      "from_table": "dim_organization",
+      "from_columns": [
+        "currency_key"
+      ],
+      "source_to_table": "dbo.DimCurrency",
+      "to_table": "dim_currency",
+      "to_columns": [
+        "currency_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimOrganization_DimOrganization",
+      "source_from_table": "dbo.DimOrganization",
+      "from_table": "dim_organization",
+      "from_columns": [
+        "parent_organization_key"
+      ],
+      "source_to_table": "dbo.DimOrganization",
+      "to_table": "dim_organization",
+      "to_columns": [
+        "organization_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimProduct_DimProductSubcategory",
+      "source_from_table": "dbo.DimProduct",
+      "from_table": "dim_product",
+      "from_columns": [
+        "product_subcategory_key"
+      ],
+      "source_to_table": "dbo.DimProductSubcategory",
+      "to_table": "dim_product_subcategory",
+      "to_columns": [
+        "product_subcategory_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimProductSubcategory_DimProductCategory",
+      "source_from_table": "dbo.DimProductSubcategory",
+      "from_table": "dim_product_subcategory",
+      "from_columns": [
+        "product_category_key"
+      ],
+      "source_to_table": "dbo.DimProductCategory",
+      "to_table": "dim_product_category",
+      "to_columns": [
+        "product_category_key"
+      ]
+    },
+    {
+      "constraint": "FK_DimReseller_DimGeography",
+      "source_from_table": "dbo.DimReseller",
+      "from_table": "dim_reseller",
+      "from_columns": [
+        "geography_key"
+      ],
+      "source_to_table": "dbo.DimGeography",
+      "to_table": "dim_geography",
+      "to_columns": [
+        "geography_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactCallCenter_DimDate",
+      "source_from_table": "dbo.FactCallCenter",
+      "from_table": "fact_call_center",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactCurrencyRate_DimCurrency",
+      "source_from_table": "dbo.FactCurrencyRate",
+      "from_table": "fact_currency_rate",
+      "from_columns": [
+        "currency_key"
+      ],
+      "source_to_table": "dbo.DimCurrency",
+      "to_table": "dim_currency",
+      "to_columns": [
+        "currency_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactCurrencyRate_DimDate",
+      "source_from_table": "dbo.FactCurrencyRate",
+      "from_table": "fact_currency_rate",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactFinance_DimAccount",
+      "source_from_table": "dbo.FactFinance",
+      "from_table": "fact_finance",
+      "from_columns": [
+        "account_key"
+      ],
+      "source_to_table": "dbo.DimAccount",
+      "to_table": "dim_account",
+      "to_columns": [
+        "account_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactFinance_DimDate",
+      "source_from_table": "dbo.FactFinance",
+      "from_table": "fact_finance",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactFinance_DimDepartmentGroup",
+      "source_from_table": "dbo.FactFinance",
+      "from_table": "fact_finance",
+      "from_columns": [
+        "department_group_key"
+      ],
+      "source_to_table": "dbo.DimDepartmentGroup",
+      "to_table": "dim_department_group",
+      "to_columns": [
+        "department_group_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactFinance_DimOrganization",
+      "source_from_table": "dbo.FactFinance",
+      "from_table": "fact_finance",
+      "from_columns": [
+        "organization_key"
+      ],
+      "source_to_table": "dbo.DimOrganization",
+      "to_table": "dim_organization",
+      "to_columns": [
+        "organization_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactFinance_DimScenario",
+      "source_from_table": "dbo.FactFinance",
+      "from_table": "fact_finance",
+      "from_columns": [
+        "scenario_key"
+      ],
+      "source_to_table": "dbo.DimScenario",
+      "to_table": "dim_scenario",
+      "to_columns": [
+        "scenario_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimCurrency",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "currency_key"
+      ],
+      "source_to_table": "dbo.DimCurrency",
+      "to_table": "dim_currency",
+      "to_columns": [
+        "currency_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimCustomer",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "customer_key"
+      ],
+      "source_to_table": "dbo.DimCustomer",
+      "to_table": "dim_customer",
+      "to_columns": [
+        "customer_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimDate1",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "due_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimDate",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "order_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimProduct",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "product_key"
+      ],
+      "source_to_table": "dbo.DimProduct",
+      "to_table": "dim_product",
+      "to_columns": [
+        "product_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimPromotion",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "promotion_key"
+      ],
+      "source_to_table": "dbo.DimPromotion",
+      "to_table": "dim_promotion",
+      "to_columns": [
+        "promotion_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimSalesTerritory",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "sales_territory_key"
+      ],
+      "source_to_table": "dbo.DimSalesTerritory",
+      "to_table": "dim_sales_territory",
+      "to_columns": [
+        "sales_territory_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSales_DimDate2",
+      "source_from_table": "dbo.FactInternetSales",
+      "from_table": "fact_internet_sales",
+      "from_columns": [
+        "ship_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSalesReason_FactInternetSales",
+      "source_from_table": "dbo.FactInternetSalesReason",
+      "from_table": "fact_internet_sales_reason",
+      "from_columns": [
+        "sales_order_number",
+        "sales_order_line_number"
+      ],
+      "source_to_table": "dbo.FactInternetSales",
+      "to_table": "fact_internet_sales",
+      "to_columns": [
+        "sales_order_number",
+        "sales_order_line_number"
+      ]
+    },
+    {
+      "constraint": "FK_FactInternetSalesReason_DimSalesReason",
+      "source_from_table": "dbo.FactInternetSalesReason",
+      "from_table": "fact_internet_sales_reason",
+      "from_columns": [
+        "sales_reason_key"
+      ],
+      "source_to_table": "dbo.DimSalesReason",
+      "to_table": "dim_sales_reason",
+      "to_columns": [
+        "sales_reason_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactProductInventory_DimDate",
+      "source_from_table": "dbo.FactProductInventory",
+      "from_table": "fact_product_inventory",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactProductInventory_DimProduct",
+      "source_from_table": "dbo.FactProductInventory",
+      "from_table": "fact_product_inventory",
+      "from_columns": [
+        "product_key"
+      ],
+      "source_to_table": "dbo.DimProduct",
+      "to_table": "dim_product",
+      "to_columns": [
+        "product_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimCurrency",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "currency_key"
+      ],
+      "source_to_table": "dbo.DimCurrency",
+      "to_table": "dim_currency",
+      "to_columns": [
+        "currency_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimDate1",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "due_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimEmployee",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "employee_key"
+      ],
+      "source_to_table": "dbo.DimEmployee",
+      "to_table": "dim_employee",
+      "to_columns": [
+        "employee_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimDate",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "order_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimProduct",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "product_key"
+      ],
+      "source_to_table": "dbo.DimProduct",
+      "to_table": "dim_product",
+      "to_columns": [
+        "product_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimPromotion",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "promotion_key"
+      ],
+      "source_to_table": "dbo.DimPromotion",
+      "to_table": "dim_promotion",
+      "to_columns": [
+        "promotion_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimReseller",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "reseller_key"
+      ],
+      "source_to_table": "dbo.DimReseller",
+      "to_table": "dim_reseller",
+      "to_columns": [
+        "reseller_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimSalesTerritory",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "sales_territory_key"
+      ],
+      "source_to_table": "dbo.DimSalesTerritory",
+      "to_table": "dim_sales_territory",
+      "to_columns": [
+        "sales_territory_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactResellerSales_DimDate2",
+      "source_from_table": "dbo.FactResellerSales",
+      "from_table": "fact_reseller_sales",
+      "from_columns": [
+        "ship_date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactSalesQuota_DimDate",
+      "source_from_table": "dbo.FactSalesQuota",
+      "from_table": "fact_sales_quota",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactSalesQuota_DimEmployee",
+      "source_from_table": "dbo.FactSalesQuota",
+      "from_table": "fact_sales_quota",
+      "from_columns": [
+        "employee_key"
+      ],
+      "source_to_table": "dbo.DimEmployee",
+      "to_table": "dim_employee",
+      "to_columns": [
+        "employee_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactSurveyResponse_CustomerKey",
+      "source_from_table": "dbo.FactSurveyResponse",
+      "from_table": "fact_survey_response",
+      "from_columns": [
+        "customer_key"
+      ],
+      "source_to_table": "dbo.DimCustomer",
+      "to_table": "dim_customer",
+      "to_columns": [
+        "customer_key"
+      ]
+    },
+    {
+      "constraint": "FK_FactSurveyResponse_DateKey",
+      "source_from_table": "dbo.FactSurveyResponse",
+      "from_table": "fact_survey_response",
+      "from_columns": [
+        "date_key"
+      ],
+      "source_to_table": "dbo.DimDate",
+      "to_table": "dim_date",
+      "to_columns": [
+        "date_key"
+      ]
+    }
+  ]
+}

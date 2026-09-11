@@ -65,6 +65,7 @@ These are load-bearing. Breaking one is a defect, not a style choice.
 shared/
 ├── data/adventure_works_dw/   raw CSVs (gitignored, ~182 MB)
 ├── schemas/                   pinned column types (checked in, 29 tables)
+├── foreign_keys.json          authoritative FKs from sys.foreign_keys (checked in)
 └── scripts/
     ├── extract_source.py      .bak → SQL Server → bcp → CSV + schemas
     └── common.py              paths, snake_case, exclusions

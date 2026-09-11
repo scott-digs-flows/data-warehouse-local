@@ -447,7 +447,7 @@ def check_value_digests(src, lake, ctx) -> Result:
     from the lake. Order-independent because nothing guarantees the lake
     preserves CSV row order; a sort would cost more and buy little.
 
-    Two honest limits, both stated in the run's NOT_CHECKED output:
+    Two honest limits, both stated in the run's Known gaps output:
 
     * A *compensating swap* — two rows exchanging values within one column —
       leaves the multiset unchanged and is invisible here, exactly as it is to
@@ -571,6 +571,85 @@ def derive_joins(tables: set[str] | None = None) -> tuple[list[tuple], list[tupl
     return fks, hierarchies, unclassified
 
 
+FK_PATH = SCHEMA_DIR.parent / "foreign_keys.json"
+
+
+def authoritative_joins() -> tuple[list[tuple], str]:
+    """Foreign keys as SQL Server declares them, or nothing if unextracted.
+
+    Returns (edges, provenance). Each edge is (from_table, from_cols, to_table,
+    to_cols) with COLUMN TUPLES, because a composite FK is one constraint over
+    several columns and flattening it into single-column edges would check a
+    relationship that does not exist.
+    """
+    if not FK_PATH.exists():
+        return [], "absent"
+    doc = json.loads(FK_PATH.read_text())
+    return ([(f["from_table"], tuple(f["from_columns"]),
+              f["to_table"], tuple(f["to_columns"])) for f in doc["foreign_keys"]],
+            "extracted")
+
+
+def check_foreign_key_oracle(src, lake, ctx) -> Result:
+    """Is the naming convention trustworthy? Measure it instead of asserting it.
+
+    `derive_joins` infers relationships from `*_key` names. `sys.foreign_keys`
+    knows them. Comparing the two answers a question this project had been
+    settling by assertion, and the authoritative set wins where they disagree.
+
+    A disagreement is only a failure if an authoritative FK is covered by
+    NOTHING. Two kinds are expected and benign:
+
+    * The 4 `parent_*_key` self-references are real declared FKs, and the
+      derivation routes them to `check_hierarchies` instead — a different check,
+      not a gap, and the right one, since a cycle is invisible to an orphan test.
+    * Edges the derivation infers that SQL Server never declared. The data
+      satisfies them, so checking them is free extra coverage, but they are not
+      contractual and are reported as such.
+    """
+    auth, provenance = authoritative_joins()
+    if provenance == "absent":
+        return Result(SKIP, f"no {FK_PATH.name} — cannot tell whether the derived edges "
+                            f"are right", [f"re-run shared/scripts/extract_source.py to "
+                                           f"produce it; --strict treats this as a failure"])
+    derived, hierarchies, _ = derive_joins()
+    D = {(t, (c,), tt, (tc,)) for t, c, tt, tc in derived}
+    H = {(t, (c,), t, (tgt,)) for t, c, tgt in hierarchies}
+    A = set(auth)
+
+    # The meaningful failure is a declared FK the lake cannot satisfy
+    # structurally — a missing table or column. Coverage itself is not a useful
+    # assertion here, because check_referential_integrity unions the two sets and
+    # would make that tautological.
+    broken = []
+    for f, fc, t, tc in sorted(A):
+        if f not in lake or t not in lake:
+            broken.append(f"{f} -> {t}: table absent from the lake")
+            continue
+        missing = [c for c in fc if c not in lake[f].arrow.schema.names] + \
+                  [c for c in tc if c not in lake[t].arrow.schema.names]
+        if missing:
+            broken.append(f"{f}.{'+'.join(fc)} -> {t}.{'+'.join(tc)}: column(s) {missing} absent")
+    if broken:
+        return Result(FAIL, f"{len(broken)} declared FK(s) cannot be checked", broken[:10])
+
+    agreed, routed = A & D, A & H
+    missed, invented = sorted(A - D - H), sorted(D - A)
+    notes = [f"{len(agreed)}/{len(A)} declared FKs the naming convention gets exactly right",
+             f"{len(routed)} declared self-references routed to the hierarchies check "
+             f"(different check, not a gap — a cycle is invisible to an orphan test)"]
+    if missed:
+        notes.append(f"{len(missed)} declared FK(s) the convention CANNOT express, covered "
+                     f"only because they are extracted: "
+                     + "; ".join(f"{f}.{'+'.join(fc)} -> {t}" for f, fc, t, _ in missed))
+    if invented:
+        notes.append(f"{len(invented)} edge(s) the convention infers that SQL Server never "
+                     f"declared — clean, checked anyway, not contractual: "
+                     + ", ".join(f"{f}.{fc[0]}" for f, fc, _, _ in invented))
+    return Result(PASS, f"{len(agreed)}/{len(A)} declared FKs derivable from names; "
+                        f"{len(missed)} only from the extract", notes)
+
+
 def derive_primary_keys() -> list[tuple[str, str]]:
     """Each table's own surrogate key, by the same naming rule as derive_joins."""
     out = []
@@ -610,7 +689,12 @@ def check_primary_keys(src, lake, ctx) -> Result:
 
 def check_referential_integrity(src, lake, ctx) -> Result:
     """Every derived fact-to-dimension edge, including role-playing dates."""
-    fks, _, unclassified = derive_joins()
+    derived, _, unclassified = derive_joins()
+    auth, provenance = authoritative_joins()
+    # Union: the declared set is the contract, the derived set adds clean edges
+    # SQL Server never declared. Checking both is strictly more coverage, and
+    # the oracle check reports which is which.
+    fks = sorted({(t, (c,), tt, (tc,)) for t, c, tt, tc in derived} | set(auth))
     if unclassified:
         return Result(FAIL, f"{len(unclassified)} *_key column(s) could not be classified",
                       unclassified[:10] +
@@ -618,25 +702,31 @@ def check_referential_integrity(src, lake, ctx) -> Result:
     bad, checked, compared, vacuous = [], 0, 0, []
     for ft, fk, dt, dk in fks:
         if ft not in lake or dt not in lake:
-            bad.append(f"{ft}.{fk} -> {dt}: table missing from the lake")
+            bad.append(f"{ft}.{'+'.join(fk)} -> {dt}: table missing from the lake")
             continue
         checked += 1
-        dim = set(lake[dt].arrow.column(dk).to_pylist())
-        vals = [v for v in lake[ft].arrow.column(fk).to_pylist() if v is not None]
+        # Tuples throughout, so a composite FK is compared as one relationship
+        # rather than as unrelated single-column edges.
+        dim = set(zip(*[lake[dt].arrow.column(c).to_pylist() for c in dk]))
+        vals = [v for v in zip(*[lake[ft].arrow.column(c).to_pylist() for c in fk])
+                if all(x is not None for x in v)]
         compared += len(vals)
         if not vals:
             # Not a failure — a nullable FK may legitimately be all NULL — but it
             # must not be counted as evidence. new_fact_currency_rate.date_key is
             # 0/50 non-null on clean data today.
-            vacuous.append(f"{ft}.{fk} -> {dt}")
+            vacuous.append(f"{ft}.{'+'.join(fk)} -> {dt}")
         orphans = {v for v in vals if v not in dim}
         if orphans:
-            bad.append(f"{ft}.{fk} -> {dt}.{dk}: {len(orphans)} orphan key(s) "
-                       f"e.g. {sorted(orphans)[:3]}")
+            bad.append(f"{ft}.{'+'.join(fk)} -> {dt}.{'+'.join(dk)}: "
+                       f"{len(orphans)} orphan key(s) e.g. {sorted(orphans)[:3]}")
     if bad:
         return Result(FAIL, f"{len(bad)} of {len(fks)} derived join(s) broken", bad[:10])
-    notes = ["derived from the pinned schemas, not hand-listed; "
-             "an unclassifiable *_key fails this check"]
+    notes = [f"{len(auth)} declared in sys.foreign_keys ({provenance}), "
+             f"{len(fks)} checked after union with the naming-derived set"
+             if provenance == "extracted" else
+             "NO foreign_keys.json — running on naming-derived edges only, which "
+             "cannot express composite or natural-key FKs"]
     if vacuous:
         notes.append(f"{len(vacuous)} edge(s) had no non-NULL values and therefore "
                      f"tested nothing: {', '.join(vacuous)}")
@@ -756,37 +846,45 @@ CHECKS: dict[str, Callable] = {
     "source_values": check_source_values,
     "value_digests": check_value_digests,
     "primary_keys": check_primary_keys,
+    "foreign_key_oracle": check_foreign_key_oracle,
     "referential_integrity": check_referential_integrity,
     "hierarchies": check_hierarchies,
     "decimal_exactness": check_decimal_exactness,
     "cross_engine": check_cross_engine,
 }
 
-# Stated on every run. A suite that implies a passing run means "everything is
-# verified" is worse than one that says where its edges are.
-NOT_CHECKED = [
-    "A compensating swap — two rows exchanging values within one column. Both "
+# Stated on every run, split because the two kinds are read differently: a gap is
+# something to close, a non-goal is something to stop asking about. Nine
+# undifferentiated bullets is how a section like this stops being read (DW-26).
+#
+# This must stay accurate as coverage changes. An entry whose gap closes moves or
+# disappears — it must never sit here disclaiming something the suite now does.
+KNOWN_GAPS = [
+    "A compensating swap — two rows exchanging values within one column. "
     "value_digests and decimal_exactness compare multisets and sums, which such a "
     "swap leaves unchanged.",
-    "Foreign keys the *_key naming convention cannot express. Two real ones exist here: "
-    "fact_internet_sales_reason's composite (sales_order_number, sales_order_line_number) "
-    "into fact_internet_sales, and new_fact_currency_rate.currency_id into "
-    "dim_currency.currency_alternate_key. Both are clean today, neither is checked.",
-    "Referential integrity counts EDGES, not rows, and skips NULL foreign keys — so a "
-    "nullable FK that is entirely NULL passes while testing nothing. The run reports how "
-    "many non-NULL values were actually compared, and names any edge that tested nothing.",
+    "Referential integrity counts EDGES, not rows, and skips NULL foreign keys, so a "
+    "nullable FK that is entirely NULL passes while testing nothing. The run reports "
+    "how many non-NULL values were compared and names any edge that tested nothing.",
     "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
-    "compares a grouped SUM; engines could disagree on every decimal and pass here.",
+    "compares a grouped SUM; two engines could disagree on every decimal and pass here.",
     "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "
-    "the loader's cast in-process; nullability_flags tests the stored schema.",
-    "Whether a source NULL differs from a source empty string — bcp writes both as an "
-    "empty field, so the distinction is gone before the lake sees it (accepted, DECISIONS.md).",
-    "That a GUI can browse the warehouse. Only the metadata queries a navigator issues "
-    "are exercised, by smoke_test and by hand (DW-13).",
-    "That the extract reproduces from SQL Server. That needs the ~10 min extract and a "
-    "before/after comparison (DW-8); this suite starts from the CSVs as they are.",
-    "Performance of anything. The dataset is far too small to support a conclusion.",
+    "the loader's cast in-process and nullability_flags the stored schema; neither "
+    "attempts a write, because a verifier must not mutate what it verifies.",
 ]
+
+NON_GOALS = [
+    "Whether a source NULL differs from a source empty string. bcp writes both as an "
+    "empty field, so the distinction is destroyed before the lake exists and no check "
+    "here could recover it. Accepted deliberately in DECISIONS.md (DW-19).",
+    "That a GUI can browse the warehouse. The metadata queries a navigator issues are "
+    "exercised, but driving DBeaver is not possible from here (DW-13).",
+    "That the extract reproduces from SQL Server. That needs the extract itself and a "
+    "before/after comparison (DW-8); this suite starts from the CSVs as they are.",
+    "Performance of anything. ~1M rows is far too small to support a conclusion, and "
+    "pretending otherwise is how this repo previously drifted into benchmarking.",
+]
+
 
 
 def parse_args() -> argparse.Namespace:
@@ -877,8 +975,11 @@ def main() -> None:
     skipped = [n for n, (r, _) in results.items() if r.status == SKIP]
     total = time.perf_counter() - t0
 
-    console.print(f"\n[bold]Not checked by this suite[/bold] — a pass does not mean these hold:")
-    for line in NOT_CHECKED:
+    console.print("\n[bold]Known gaps[/bold] — real, and worth closing:")
+    for line in KNOWN_GAPS:
+        console.print(f"  [dim]•[/dim] {line}")
+    console.print("[bold]Deliberate non-goals[/bold] — never checked here:")
+    for line in NON_GOALS:
         console.print(f"  [dim]•[/dim] {line}")
 
     console.print(
