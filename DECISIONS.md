@@ -48,6 +48,40 @@ Conflating these is what made an earlier version of the repo confusing.
   (`missing field-id`). Treat as read-only unless every reader tolerates it.
 - **The dataset is too small for performance conclusions.** ~1M rows total,
   largest star-schema fact table ~60k. Every engine answers instantly.
+- **An engine can accept a NULL into a column it says is non-nullable, and say
+  nothing.** ClickHouse 26.7.3.19, via `clickhouse_connect.insert_arrow`:
+
+  ```
+  CREATE TABLE probe.t (`k` Int32, `color` String) ENGINE = MergeTree ORDER BY k
+  insert_arrow  pa.array(["Red", None, "Blue"])
+    -> SUCCEEDED
+       (1, 'Red',  is_empty=0)
+       (2, '',     is_empty=1)   <- the NULL, silently coerced
+       (3, 'Blue', is_empty=0)
+  ```
+
+  The column is `String`, not `Nullable(String)`. Nothing rejected the NULL; it
+  became an empty string and the insert reported success.
+
+  Found in the off-pipeline CSV→MergeTree loader removed under DW-15, where it
+  composed with a second silent failure: `dim_product.color` is pinned NOT NULL
+  and holds the literal source value `NA` in 254 rows, those were parsed to NULL
+  by the `null_values` default (DW-18), and the insert then coerced them to `''`
+  — producing a value present in neither the source nor the lake, with no error
+  anywhere in the run.
+
+  **Why this is written here rather than tracked as work.** There is nothing to
+  fix: the loader that hit it is deleted, and the architecture now forbids
+  loading source files into an engine's native storage at all. But the hazard
+  belongs to the *combination* — a MergeTree DDL generated from pinned schemas,
+  plus an Arrow insert — not to that loader, so the next engine on that path
+  will meet it. The lesson generalises past ClickHouse: **"the insert succeeded"
+  is not evidence the data is right.** Validate nullability before the write,
+  the way `apply_pinned_nullability()` does on the Iceberg path, where a NULL in
+  a pinned-NOT-NULL column raises `ValueError: Casting field 'x' with null
+  values to non-nullable` and fails the load loudly (DW-20). Then read back and
+  reconcile against the source.
+
 - **A wire protocol that runs queries is not therefore browsable.**
   ClickHouse's Postgres wire emulation on 9005 executes SQL correctly, so it
   looks like the obvious route for a GUI — and this repo recommended it as
