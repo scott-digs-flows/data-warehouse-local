@@ -123,6 +123,24 @@ them dilute status reporting.
   planned.
 - If reality diverges from the ticket, update the ticket — a stale description
   is worse than none.
+- **A stale claim and a stale instruction are corrected differently.** When work
+  disproves something a ticket said, what you do depends on whether a reader can
+  *act* on it:
+
+  | The ticket said | What to do |
+  | --- | --- |
+  | A **claim** — "this type has no ClickHouse equivalent", "attachment can fail silently" | Leave it as written; put the correction in the closing comment. The record that the question was asked and tested is worth more than tidiness. |
+  | An **instruction** — "connect with driver X", "run script Y first" | Mark it **at the point of use** with a dated `SUPERSEDED` note, then leave the original text intact below it. |
+
+  The difference is where the cost lands. A wrong claim costs a reader nothing
+  until they check it. A wrong instruction is acted on *before* they ever reach
+  your correction — so the marker has to sit where their eye lands, not at the
+  bottom of the comment thread. Never delete the superseded text: the reasoning
+  that led somewhere wrong is exactly what stops it being re-derived.
+
+  Same test applies to the repo. A disproved claim in a README gets corrected in
+  place; a disproved *command* gets fixed immediately, because someone will paste
+  it.
 - Comment on the issue when a decision is made or an approach changes, so the
   reasoning survives outside the transcript.
 - Reference the issue key in commit messages and PR titles: `DW-12: ...`.

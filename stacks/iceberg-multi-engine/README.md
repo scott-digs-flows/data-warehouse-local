@@ -86,18 +86,45 @@ a fresh checkout does not work.
 
 ## Quickstart
 
+Checkout to querying ClickHouse, in one sequence. **Run from this directory**
+(`stacks/iceberg-multi-engine/`) unless a line says otherwise. Verified end to
+end from a destroyed stack under DW-14 — every step below was executed in this
+order, and the two steps that used to be missing are marked.
+
 ```bash
+# 0. Prerequisite, once per machine. Without these, every host-side script
+#    fails in confusing ways — the catalog advertises Docker-internal hostnames.
+#    See "Required /etc/hosts entries" above.
+grep -qE '^127\.0\.0\.1\s+lakekeeper' /etc/hosts || \
+  echo '127.0.0.1  lakekeeper' | sudo tee -a /etc/hosts
+grep -qE '^127\.0\.0\.1\s+minio' /etc/hosts || \
+  echo '127.0.0.1  minio' | sudo tee -a /etc/hosts
+
+# 1. One-time: extract the source data. ~10 min — restores a .bak into SQL
+#    Server, which runs under amd64 emulation on Apple Silicon. Run from the
+#    REPO ROOT. Skip if shared/data/adventure_works_dw/ is already populated.
+cd ../..
+uv run python shared/scripts/extract_source.py
+cd stacks/iceberg-multi-engine
+
+# 2. Config and deps
 cp .env.example .env          # single source for all credentials and ports
-uv sync --extra duckdb-api
+uv sync                       # add --extra duckdb-api only for the DuckDB HTTP service
 
-docker compose up -d                     # lake: MinIO + Postgres + Lakekeeper
-uv run python scripts/download_adventure_works.py   # ~10 min (SQL Server restore)
-uv run python scripts/load_iceberg.py               # CSV -> Iceberg `raw`
+# 3. Lake + ClickHouse. The catalog attaches itself; there is no manual step.
+docker compose --profile clickhouse up -d
 
-docker compose --profile engines up -d   # Trino + DuckDB API + ClickHouse
-uv run python scripts/sync_postgres.py   # Iceberg -> Postgres copy
+# 4. Raw CSVs -> Iceberg `raw`
+uv run python scripts/load_iceberg.py
 
-uv run python scripts/smoke_test.py      # verify all engines agree
+# 5. REQUIRED, and easy to miss: expose the Iceberg tables as ClickHouse views.
+#    DataLakeCatalog tables never register in system.tables, and engines.yaml's
+#    ClickHouse `qualify` is raw."{table}" — so without this, step 6 fails with
+#    `Code: 81 ... Database raw does not exist`.
+uv run python scripts/create_clickhouse_views.py
+
+# 6. Verify
+uv run python scripts/smoke_test.py --engine clickhouse
 ```
 
 Expected final output:
@@ -105,6 +132,24 @@ Expected final output:
 ```
 ✓ All engines agree on 60,398 rows
 ✓ All engines agree on the aggregate (10 territory groups, sums matched to 2dp)
+```
+
+**Runtime.** Steps 2–6 took **45 s** measured from a fully destroyed stack
+(`docker compose --profile all down -v`, no `.env`): compose up 28 s, Iceberg
+load 14 s, views 2 s, smoke test 1 s. Two honest caveats — that machine already
+had the Docker images and the `uv` cache, so a genuinely first-ever run adds the
+image pull (~1 GB for this profile) and the dependency download. And step 1, the
+extract, is the ~10 min one-time cost on top; it was **not** re-executed in that
+measurement because `shared/data/` was already populated.
+
+### Beyond ClickHouse
+
+The sequence above is the ClickHouse path. For the other engines:
+
+```bash
+docker compose --profile engines up -d   # + Trino + DuckDB HTTP
+uv run python scripts/sync_postgres.py   # Iceberg -> Postgres copy (Tier 2)
+uv run python scripts/smoke_test.py      # compare every engine
 ```
 
 ### Running just one engine
