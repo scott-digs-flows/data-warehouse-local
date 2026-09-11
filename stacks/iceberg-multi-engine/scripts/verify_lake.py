@@ -65,6 +65,12 @@ PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
 # changed. This one would.
 KNOWN_ROWS, KNOWN_TABLES, KNOWN_COLUMNS = 1_060_715, 29, 343
 
+# The oracle needs an oracle. Review removed the composite from
+# shared/foreign_keys.json and the suite stayed green; it then ADDED a fabricated
+# constraint and the oracle vouched for it. The artifact is authoritative only if
+# something notices when it changes.
+KNOWN_FK_CONSTRAINTS, KNOWN_FK_COMPOSITES = 44, 1
+
 
 @dataclass
 class Result:
@@ -622,6 +628,13 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
     # assertion here, because check_referential_integrity unions the two sets and
     # would make that tautological.
     broken = []
+    if len(A) != KNOWN_FK_CONSTRAINTS:
+        broken.append(f"artifact declares {len(A)} constraints, expected "
+                      f"{KNOWN_FK_CONSTRAINTS} — shared/foreign_keys.json changed")
+    n_composite = sum(1 for _, fc, _, _ in A if len(fc) > 1)
+    if n_composite != KNOWN_FK_COMPOSITES:
+        broken.append(f"artifact has {n_composite} composite FK(s), expected "
+                      f"{KNOWN_FK_COMPOSITES}")
     for f, fc, t, tc in sorted(A):
         if f not in lake or t not in lake:
             broken.append(f"{f} -> {t}: table absent from the lake")
@@ -707,7 +720,14 @@ def check_referential_integrity(src, lake, ctx) -> Result:
         checked += 1
         # Tuples throughout, so a composite FK is compared as one relationship
         # rather than as unrelated single-column edges.
-        dim = set(zip(*[lake[dt].arrow.column(c).to_pylist() for c in dk]))
+        target_vals = list(zip(*[lake[dt].arrow.column(c).to_pylist() for c in dk]))
+        dim = set(target_vals)
+        if len(dim) != len(target_vals):
+            # An FK target must be unique, or the join fans out. check_primary_keys
+            # covers the 20 derivable surrogate keys; this covers every FK target,
+            # including composites like fact_internet_sales's real key.
+            bad.append(f"{dt}.{'+'.join(dk)}: FK target is not unique "
+                       f"({len(target_vals) - len(dim)} duplicate(s))")
         vals = [v for v in zip(*[lake[ft].arrow.column(c).to_pylist() for c in fk])
                 if all(x is not None for x in v)]
         compared += len(vals)
@@ -863,9 +883,17 @@ KNOWN_GAPS = [
     "A compensating swap — two rows exchanging values within one column. "
     "value_digests and decimal_exactness compare multisets and sums, which such a "
     "swap leaves unchanged.",
+    "That the extract reproduces from SQL Server — a scope boundary rather than an "
+    "impossibility. This suite starts from the CSVs as they are; DW-8 proved the "
+    "extract reproducible by backing up and re-running it.",
     "Referential integrity counts EDGES, not rows, and skips NULL foreign keys, so a "
     "nullable FK that is entirely NULL passes while testing nothing. The run reports "
     "how many non-NULL values were compared and names any edge that tested nothing.",
+    "new_fact_currency_rate.currency_id -> dim_currency.currency_alternate_key is "
+    "checked by nothing. It is real in the data (50 rows, 0 orphans) but is neither "
+    "declared in sys.foreign_keys nor expressible as *_key, so it falls through the "
+    "seam between derivation and extraction. Undeclared is not the same as absent — "
+    "the previous wording claimed this was closed when only its composite sibling was.",
     "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
     "compares a grouped SUM; two engines could disagree on every decimal and pass here.",
     "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "
@@ -879,8 +907,7 @@ NON_GOALS = [
     "here could recover it. Accepted deliberately in DECISIONS.md (DW-19).",
     "That a GUI can browse the warehouse. The metadata queries a navigator issues are "
     "exercised, but driving DBeaver is not possible from here (DW-13).",
-    "That the extract reproduces from SQL Server. That needs the extract itself and a "
-    "before/after comparison (DW-8); this suite starts from the CSVs as they are.",
+
     "Performance of anything. ~1M rows is far too small to support a conclusion, and "
     "pretending otherwise is how this repo previously drifted into benchmarking.",
 ]

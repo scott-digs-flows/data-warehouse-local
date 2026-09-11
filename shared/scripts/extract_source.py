@@ -337,12 +337,15 @@ def foreign_keys() -> list[dict]:
         db=DB_NAME,
     )
     grouped: dict[str, dict] = {}
+    malformed: list[str] = []
+    kept = 0
     for line in out.splitlines():
         line = line.strip()
         if not line or line.startswith("-") or "|" not in line:
             continue
         parts = [p.strip() for p in line.split("|")]
         if len(parts) < 8:
+            malformed.append(line)
             continue
         name, pschema, ptable, pcol, rschema, rtable, rcol, _ord = parts[:8]
         # A constraint touching an excluded table cannot be checked downstream,
@@ -358,8 +361,26 @@ def foreign_keys() -> list[dict]:
             "to_table": snake_case(rtable),
             "to_columns": [],
         })
+        kept += 1
         fk["from_columns"].append(snake_case(pcol))
         fk["to_columns"].append(snake_case(rcol))
+    # Reconcile against the server rather than trusting the parse. A dropped row
+    # would quietly demote a composite to a single-column FK, which is the same
+    # silent-skip family as every other defect this project has found.
+    if malformed:
+        raise RuntimeError(f"unparsed sys.foreign_keys rows: {malformed[:3]}")
+    declared = in_container_sqlcmd(
+        "SET NOCOUNT ON; SELECT COUNT(*) FROM sys.foreign_key_columns fkc "
+        "JOIN sys.tables pt ON pt.object_id = fkc.parent_object_id "
+        "JOIN sys.tables rt ON rt.object_id = fkc.referenced_object_id "
+        f"WHERE pt.name NOT IN ('{"','".join(sorted(EXCLUDED_TABLES))}') "
+        f"AND rt.name NOT IN ('{"','".join(sorted(EXCLUDED_TABLES))}')",
+        db=DB_NAME,
+    )
+    n = next((int(x) for x in (l.strip() for l in declared.splitlines()) if x.isdigit()), None)
+    if n is not None and n != kept:
+        raise RuntimeError(f"parsed {kept} FK columns but the server declares {n}")
+
     # Sorted so two extracts are byte-identical; sqlcmd row order is not a contract.
     return sorted(grouped.values(),
                   key=lambda f: (f["from_table"], f["from_columns"], f["to_table"]))
