@@ -32,6 +32,8 @@ Conflating these is what made an earlier version of the repo confusing.
 | Druid dropped | It cannot read Iceberg — `druid-iceberg-extensions` is an *ingestion input source* that copies into Druid's own segment format. That makes it an ETL target, not an engine, and it cost six containers. |
 | Lakekeeper as the Iceberg catalog | Reasonable open REST catalog that takes access control seriously. No reason found to switch. |
 | Full-refresh Postgres sync | Reloads in seconds at this size. Incremental would add snapshot bookkeeping and drift bugs for no benefit. |
+| NULL and the empty string are not distinguished in the raw extract *(2026-09-11)* | `bcp` character format writes an unquoted empty field for both, so the distinction is destroyed before any loader runs — 191,778 values across 32 nullable columns are formally ambiguous. Rejected re-extracting with a NULL sentinel (a `bcp queryout` with per-column `ISNULL` mapping): it adds per-column SQL generation to the extract for a distinction that is semantically inert in a BI star schema, where "no value" is one concept. Accepted deliberately rather than engineered around. Revisit if a source arrives where empty string and NULL genuinely differ in meaning. |
+| Literal `NCHAR(0)` becomes the empty string at the Iceberg load boundary *(2026-09-11)* | `DimProduct`'s Spanish and French name columns hold 287 values each that are a single 0x00 byte, meaning "no translation available". They are pinned `NOT NULL`, so they were never NULLs. Rejected preserving the raw NUL (byte-faithful, but Postgres `text` rejects 0x00, pushing the workaround into one consumer) and rejected NULL (the previous behaviour — it asserts "unknown" where the source says "empty", and breaks the pinned NOT NULL contract). Empty string is safe in every engine and keeps the source's meaning. |
 
 ## Findings worth remembering
 
@@ -43,6 +45,20 @@ Conflating these is what made an earlier version of the repo confusing.
   (`missing field-id`). Treat as read-only unless every reader tolerates it.
 - **The dataset is too small for performance conclusions.** ~1M rows total,
   largest star-schema fact table ~60k. Every engine answers instantly.
+- **Pinning types does not pin which *values* mean NULL.** A second, separate
+  door for inference, and the more dangerous one because it is invisible in a
+  green load. `pyarrow.csv` defaults `null_values` to a 17-token list — `NA`,
+  `N/A`, `null`, `NaN`, `#N/A` and 12 others — and silently nulls any value
+  matching one. AdventureWorks uses `NA` as a real value, so this destroyed 564
+  source values across 5 columns until it was found by comparing the lake
+  against the source rather than by reading the loader (DW-18). Any loader for
+  any new source must state `null_values` explicitly. The general rule: the
+  pinned-schema contract covers types, and *every* remaining inference the
+  reader performs has to be pinned down separately and deliberately.
+- **A loader that never reads back cannot detect its own corruption.**
+  `load_iceberg.py` reports row counts from the in-memory Arrow table, so both
+  the `NA` corruption and a total failure of the read path were invisible to a
+  green run. Verification has to query the lake, not trust the loader's log.
 
 ## Deliberately out of scope
 

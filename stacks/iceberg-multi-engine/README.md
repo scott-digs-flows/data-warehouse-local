@@ -284,11 +284,13 @@ These all cost real debugging time; they are recorded so they only cost it once.
   `SUM(...)` as the string `"3649866.5512"`. A BI app on a JSON transport has to
   re-infer types a native driver would have preserved.
 - **287 `DimProduct` name values arrive as a literal NUL byte**, not an empty
-  field. Parquet and Iceberg carry them fine; Postgres `text` rejects them.
-  Cleaned at the load boundary so every engine sees the same data. These are
-  *not* NULLs that `bcp -k` mangled — both columns are pinned `nullable=false`,
-  so they are literal NCHAR(0) values in the source, and converting them to NULL
-  is a lossy narrowing. Tracked as **DW-19**.
+  field. Parquet and Iceberg carry them fine; Postgres `text` rejects them, so
+  they are cleaned at the load boundary and every engine sees the same data.
+  These are *not* NULLs that `bcp -k` mangled — both columns are pinned
+  `nullable=false`, so they are literal NCHAR(0) values meaning "no translation
+  available". They become **the empty string** (DW-19, decided 2026-09-11); NULL
+  was the old behaviour and asserted "unknown" where the source said "empty".
+  See `DECISIONS.md`.
 - **`pyarrow.csv` nulls the literal string `NA` unless you stop it.** Fixed
   under **DW-18**; do not undo it. PyArrow defaults `null_values` to a 17-token
   list including `NA`, `N/A`, `null`, `NaN` and `#N/A`, and silently nulls any
@@ -302,16 +304,14 @@ These all cost real debugging time; they are recorded so they only cost it once.
   invisible in a green load. An audit of all 16 non-empty tokens across all 29
   tables found only `NA` live today, but the fix is deliberately exhaustive so a
   future source containing `null` or `NaN` as real text does not reintroduce it.
-- **NULL and the empty string are indistinguishable throughout the lake.** `bcp`
+- **NULL and the empty string are indistinguishable in the extract.** `bcp`
   character format writes an unquoted empty field for both, so the distinction
-  is gone before the loader runs — no loader change can recover it, which is why
-  this is an extract-layer question. Tracked as **DW-19**, still open. Measured
-  across 146 string columns: **0 empty strings**, and of the string NULLs,
-  **191,778 across 32 columns are genuinely ambiguous** (the column is pinned
-  nullable, so the empty field could have been either) while **574 across 2
-  columns are provably wrong** — `dim_product.spanish_product_name` and
-  `french_product_name` are pinned `nullable=false`, so SQL Server cannot have
-  held a NULL there. Those 574 are the NCHAR(0) case above.
+  is gone before the loader runs — no loader change can recover it. **Accepted
+  deliberately** (DW-19, `DECISIONS.md`) rather than re-extracting with a NULL
+  sentinel: 191,778 values across 32 nullable columns are formally ambiguous,
+  but "no value" is one concept in a BI star schema. The lake's only 574 empty
+  strings are the NCHAR(0) case above, which is why they are worth knowing about
+  — every other empty source field is a NULL here.
 
 ## Directory layout
 

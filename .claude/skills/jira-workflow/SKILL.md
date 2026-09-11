@@ -45,7 +45,18 @@ creating a Story or Task, and to the parent key when creating a Subtask.
 
 ## Workflow states
 
-`To Do` (id `10000`) → `In Progress` (id `10001`) → `Done`
+`To Do` (id `10000`) → `In Progress` (id `10001`) → `In Review` (id `10002`)
+→ `QR` (id `10003`) → `Done` (id `10004`)
+
+`In Review` and `QR` are both in Jira's `indeterminate` category. This skill
+documented only three states until 2026-09-11, which is how work got planned as
+if `Done` came straight after `In Progress`.
+
+In practice every transition in this project is **global** — `Done` is reachable
+in one hop from `In Progress`, so the two middle states are conventions, not
+gates. Do not infer from that that they can be ignored: globality is a project
+setting someone can change, which is exactly why the ids below must still be
+resolved per issue.
 
 Transition IDs are not stable across issue types. Call
 `getTransitionsForJiraIssue` for the issue, then `transitionJiraIssue` with the

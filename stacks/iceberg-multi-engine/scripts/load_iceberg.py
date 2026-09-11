@@ -94,7 +94,7 @@ def wanted_columns(spec: dict) -> list[dict]:
 
 
 def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
-    """Turn embedded NUL bytes in text columns into proper nulls.
+    """Replace literal NUL bytes in text columns with the empty string.
 
     287 rows each in DimProduct's Spanish and French name columns arrive as a
     single literal 0x00 byte. Parquet and Iceberg carry those bytes happily, but
@@ -102,13 +102,22 @@ def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
     Cleaning at the load boundary keeps every engine's view of the lake
     identical, instead of pushing the workaround into one consumer.
 
-    Careful about *what those values are*. This once claimed they were NULLs that
-    `bcp -k` had written as 0x00. That is wrong: both columns are pinned
-    `nullable=false`, so SQL Server cannot have held a NULL there — they are
-    literal NCHAR(0) values in the source, and the CSV contains zero empty
-    strings for these columns. Converting them to NULL below is therefore a
-    lossy choice, not a restoration of the source. Verified under DW-10; what
-    they *should* become is DW-19.
+    These are NOT NULLs. Both columns are pinned `nullable=false`, so SQL Server
+    cannot have held a NULL there, and the CSV contains zero empty fields for
+    them — they are literal NCHAR(0) values in the source, meaning "no
+    translation available".
+
+    They become the empty string rather than NULL (DW-19, decided 2026-09-11).
+    Empty string honours the pinned NOT NULL contract, is safe in every engine
+    including Postgres, and carries the source's meaning adequately for BI.
+    Preserving the raw NUL would be byte-faithful but breaks Postgres, which
+    would push the workaround into a single consumer — exactly what cleaning
+    here is meant to avoid. NULL was the previous behaviour and was simply
+    wrong: it asserted "unknown" where the source said "empty".
+
+    Note this is the only place the lake contains an empty string at all; every
+    other empty field in the extract is genuinely indistinguishable from NULL
+    (see DECISIONS.md).
     """
     for i, field in enumerate(tbl.schema):
         if not pa.types.is_string(field.type):
@@ -116,11 +125,10 @@ def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
         col = tbl.column(i)
         if not pc.any(pc.match_substring(col, "\x00")).as_py():
             continue
+        # Strips NULs wherever they appear; a value that was nothing but NUL
+        # bytes therefore lands as "". Genuine NULLs stay NULL - replace_substring
+        # propagates them - so the two remain distinguishable in these columns.
         cleaned = pc.replace_substring(col, pattern="\x00", replacement="")
-        # A value that was nothing but NUL bytes becomes NULL. Note this is a
-        # lossy narrowing, not a round-trip: the source held NCHAR(0), not NULL.
-        # Kept as-is pending DW-19 rather than changed mid-verification.
-        cleaned = pc.if_else(pc.equal(cleaned, ""), pa.scalar(None, pa.string()), cleaned)
         tbl = tbl.set_column(i, field, cleaned)
     return tbl
 
