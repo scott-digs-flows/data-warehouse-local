@@ -45,7 +45,9 @@ data, which is what makes adding one cost a compose service and an
 ```bash
 uv sync
 
-# One-time: extract source data (~10 min, spins up SQL Server under emulation)
+# One-time: extract source data. ~10 min on a cold machine — almost all of it a
+# 1.68 GB SQL Server image pull under emulation plus a 97 MB .bak download.
+# Measured at 33 s once both are cached (DW-8); the extract itself is fast.
 uv run python shared/scripts/extract_source.py
 
 # Then bring up the lake and an engine

@@ -51,7 +51,8 @@ docker compose --profile duckdb up -d       # lake + DuckDB HTTP
 docker compose --profile engines up -d      # lake + all three    (6 containers, ~2.1 GB)
 ```
 
-One-time, ~10 minutes, before any of this: `uv run python
+One-time, before any of this — ~10 min cold, 33 s with the SQL Server image and
+`.bak` cached (DW-8): `uv run python
 shared/scripts/extract_source.py` restores the `.bak` into SQL Server (under
 amd64 emulation on Apple Silicon) and exports CSVs plus pinned schemas.
 

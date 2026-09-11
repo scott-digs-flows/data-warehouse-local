@@ -104,9 +104,11 @@ grep -qE '^127\.0\.0\.1\s+lakekeeper' /etc/hosts || \
 grep -qE '^127\.0\.0\.1\s+minio' /etc/hosts || \
   echo '127.0.0.1  minio' | sudo tee -a /etc/hosts
 
-# 1. One-time: extract the source data. ~10 min — restores a .bak into SQL
-#    Server, which runs under amd64 emulation on Apple Silicon. Run from the
-#    REPO ROOT. Skip if shared/data/adventure_works_dw/ is already populated.
+# 1. One-time: extract the source data. Restores a .bak into SQL Server, which
+#    runs under amd64 emulation on Apple Silicon. Run from the REPO ROOT. Skip
+#    if shared/data/adventure_works_dw/ is already populated.
+#    ~10 min cold, but that is almost entirely a 1.68 GB image pull and a 97 MB
+#    .bak download — measured at 33 s once both are cached (DW-8).
 cd ../..
 uv run python shared/scripts/extract_source.py
 cd stacks/iceberg-multi-engine
@@ -155,9 +157,9 @@ anything about data volume — no speed conclusion should be drawn from it.
 
 Two caveats on the numbers: those machines already had the Docker images and the
 `uv` cache, so a genuinely first-ever run adds the image pull (~1 GB for this
-profile) and the dependency download. And step 1, the extract, is the ~10 min
-one-time cost on top; it was **not** re-executed in any of those measurements,
-because `shared/data/` was already populated.
+profile) and the dependency download. And step 1, the extract, is a one-time cost
+on top — **33 s** measured under DW-8 with the SQL Server image and the `.bak`
+already cached, or roughly 10 min on a machine that has to fetch both.
 
 ### Beyond ClickHouse
 
