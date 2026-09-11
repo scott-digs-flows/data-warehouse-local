@@ -46,6 +46,19 @@ Conflating these is what made an earlier version of the repo confusing.
   (`missing field-id`). Treat as read-only unless every reader tolerates it.
 - **The dataset is too small for performance conclusions.** ~1M rows total,
   largest star-schema fact table ~60k. Every engine answers instantly.
+- **A wire protocol that runs queries is not therefore browsable.**
+  ClickHouse's Postgres wire emulation on 9005 executes SQL correctly, so it
+  looks like the obvious route for a GUI — and this repo recommended it as
+  such. It is not: there is no `pg_catalog`, which is exactly what Postgres
+  drivers read to enumerate tables and columns, so a navigator stays empty
+  while every query succeeds. `pg_catalog.pg_class` answers *"Database
+  pg_catalog does not exist"*, and psql's `\dt` drops the connection on
+  `OPERATOR(pg_catalog.~)`. Browse over HTTP 8123 with a ClickHouse driver,
+  where `system.tables`, `system.columns` and `information_schema` all answer.
+  Generalises beyond ClickHouse: when adding an engine, test *introspection*
+  separately from *querying* — the BI app needs both, and they fail
+  independently (DW-13).
+
 - **Pinning types does not pin which *values* mean NULL.** A second, separate
   door for inference, and the more dangerous one because it is invisible in a
   green load. `pyarrow.csv` defaults `null_values` to a 17-token list — `NA`,

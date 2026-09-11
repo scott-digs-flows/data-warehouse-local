@@ -83,6 +83,21 @@ PGPASSWORD=clickhouse psql -h 127.0.0.1 -p 9005 -U default -d default \
 Ports: HTTP `8123`, native `9010` (moved off `9000` because MinIO owns it),
 Postgres wire `9005`.
 
+**Which route for a GUI: HTTP 8123 with a ClickHouse driver.** Database `raw`,
+user `default`, password `clickhouse`, credentials in exactly one place.
+Measured under DW-13: over HTTP, `system.tables` / `system.columns` /
+`information_schema` all report 29 tables and 343 columns for `raw`, and
+`DESCRIBE TABLE raw.dim_customer` returns its 29 columns — everything a
+navigator needs.
+
+**Not the Postgres driver on 9005, despite it being the easier connection.**
+It executes SQL correctly, but ClickHouse's Postgres wire emulation does not
+implement `pg_catalog` — `SELECT … FROM pg_catalog.pg_class` answers
+`Database pg_catalog does not exist`, and psql's `\dt` / `\d` fail outright
+(the server cannot parse `OPERATOR(pg_catalog.~)` and drops the connection).
+Postgres drivers enumerate tables through `pg_catalog`, so the navigator stays
+empty while queries work. Use 9005 as a query fallback, not to browse.
+
 ## Failure modes
 
 Each of these cost real debugging time. Recognise them rather than rediscover
@@ -93,11 +108,17 @@ HTTP header simultaneously`** — ClickHouse refuses two auth headers at once.
 DBeaver's modern driver (clickhouse-jdbc v2) sends `X-ClickHouse-User/Key`; if
 the client also sends `Authorization: Basic`, the server rejects the pair, and
 **there is no server setting to relax it** (checked `system.settings` and
-`system.server_settings`). In order of preference: connect with a **Postgres
-driver on port 9005**, bypassing the JDBC driver entirely; or use DBeaver's
-**ClickHouse (Legacy)** driver, which sends Basic auth only; or ensure
-credentials appear in exactly one place, not both the auth fields and the JDBC
-URL.
+`system.server_settings`). Still live on 26.7.3.19: both headers → 516, either
+one alone → fine.
+
+The fix is **credentials in exactly one place**, not a different transport.
+Basic alone works; `X-ClickHouse-*` alone works. The pair is the only failure,
+and it usually comes from filling in the auth fields *and* the JDBC URL.
+
+**This skill used to rank a Postgres driver on 9005 first. That was wrong for
+browsing** and is corrected under DW-13 — see *Connecting* above. 9005 is a
+fine query fallback and a genuine way around the 516 trap, but pgwire has no
+`pg_catalog`, so a navigator stays empty.
 
 **ClickHouse ships listening on `::1` only.** The container looks healthy — its
 healthcheck runs *inside* the container — while being unreachable from

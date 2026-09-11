@@ -108,9 +108,15 @@ engines:
       host: localhost
       http_port: 8123
       native_port: 9010      # remapped; MinIO owns 9000 on the host
-      # Postgres wire-protocol emulation. Lets GUI clients connect with a
-      # Postgres driver when clickhouse-jdbc misbehaves (see README gotchas).
-      # Partial emulation — fine for queries, not for full introspection.
+      # Postgres wire-protocol emulation. A query fallback when clickhouse-jdbc
+      # misbehaves (see the Code 516 trap in README gotchas).
+      #
+      # "Not for full introspection" is now measured, not suspected (DW-13):
+      # there is no `pg_catalog` here, so `pg_catalog.pg_class` answers
+      # "Database pg_catalog does not exist" and psql's \dt drops the
+      # connection. Postgres drivers enumerate through pg_catalog, so a GUI
+      # navigator stays empty on this port while queries succeed.
+      # To BROWSE, use a ClickHouse driver on http_port above.
       pgwire_port: 9005
       user: default
       # Non-blank on purpose: with an empty password some JDBC clients send

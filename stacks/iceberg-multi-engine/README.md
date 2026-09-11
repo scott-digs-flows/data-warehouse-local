@@ -138,6 +138,43 @@ That exposes all 29 tables as `raw.<table>` — visible to `system.tables` and
 `information_schema`, with real column types, and without the
 `datalake."raw.dim_customer"` quoting that GUIs mangle. No data is copied.
 
+**Then connect with a ClickHouse driver over HTTP, not a Postgres driver.**
+Measured under DW-13; the reasoning is below the recipe because the obvious
+choice is the wrong one.
+
+| | |
+| --- | --- |
+| Driver | ClickHouse (DBeaver's **ClickHouse (Legacy)** works; so does the modern one) |
+| Host / port | `localhost` : `8123` |
+| Database | `raw` |
+| User / password | `default` / `clickhouse` |
+| Credentials | in **exactly one place** — see the Code 516 trap below |
+
+**Why not the Postgres driver on 9005, which looks easier?** It runs queries
+fine, but a navigator will stay empty: ClickHouse's Postgres wire emulation
+does not implement `pg_catalog`, and that is what Postgres drivers read to
+enumerate tables and columns.
+
+```bash
+# queries: fine
+PGPASSWORD=clickhouse psql -h 127.0.0.1 -p 9005 -U default -d default \
+  -c 'SELECT count() FROM raw.dim_customer'          # -> 18484
+
+# browsing: not fine
+psql ... -c '\dt raw.*'
+# ERROR: Unrecognized token ... at '~' in OPERATOR(pg_catalog.~)
+#        server closed the connection unexpectedly
+psql ... -c 'SELECT count() FROM pg_catalog.pg_class'
+# DB::Exception: Database pg_catalog does not exist
+```
+
+Over HTTP, by contrast, every metadata surface a tool needs answers:
+`system.tables` and `system.columns` return 29 and 343 for `raw`, as does
+`information_schema`, and `DESCRIBE TABLE raw.dim_customer` returns 29 columns.
+
+So: **HTTP 8123 to browse, pgwire 9005 as a query fallback.** `engines.yaml`
+carries both ports for that reason.
+
 Postgres always runs — it stores the Iceberg catalog metadata regardless of
 which engine you query. `sync_postgres.py` is only needed if you want the
 `analytics` copy as well.
@@ -259,14 +296,22 @@ These all cost real debugging time; they are recorded so they only cost it once.
   DBeaver's modern ClickHouse driver (clickhouse-jdbc v2) authenticates with
   `X-ClickHouse-User/Key`; if the client also sends `Authorization: Basic`, the
   server refuses the pair, and there is **no server setting to relax it**
-  (checked `system.settings` and `system.server_settings`). Options, in order:
-  use DBeaver's **ClickHouse (Legacy)** driver, which sends Basic auth only;
-  ensure credentials are supplied in exactly one place (not in both the auth
-  fields and the JDBC URL); or connect with a **Postgres driver on port 9005**,
-  where ClickHouse's Postgres wire emulation bypasses the JDBC driver entirely:
+  (checked `system.settings` and `system.server_settings`). Confirmed still live
+  on 26.7.3.19: sending both headers returns 516, while either alone succeeds.
+
+  The fix is **credentials in exactly one place**, not a different transport —
+  either `Authorization: Basic` alone (DBeaver's **ClickHouse (Legacy)** driver)
+  or `X-ClickHouse-User/Key` alone (the modern driver). Both work; the failure
+  is only ever the *pair*, typically caused by filling in the auth fields *and*
+  putting credentials in the JDBC URL.
+
+  A **Postgres driver on port 9005** sidesteps the trap, and is a reasonable
+  query fallback — but do not reach for it to browse: pgwire has no
+  `pg_catalog`, so the navigator stays empty (see *Making ClickHouse browsable
+  in a GUI* above).
   ```bash
   PGPASSWORD=clickhouse psql -h 127.0.0.1 -p 9005 -U default -d default \
-    -c 'SELECT count() FROM datalake."raw.dim_customer"'
+    -c 'SELECT count() FROM raw.dim_customer'
   ```
 - **ClickHouse won't use server-configured S3 credentials in user queries**
   unless `s3_allow_server_credentials_in_user_queries` is set. The alternative
