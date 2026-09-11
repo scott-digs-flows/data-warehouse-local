@@ -96,13 +96,19 @@ def wanted_columns(spec: dict) -> list[dict]:
 def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
     """Turn embedded NUL bytes in text columns into proper nulls.
 
-    `bcp -k` writes some NULL nvarchar values as a literal 0x00 byte rather than
-    an empty field (287 rows each in DimProduct's Spanish and French name
-    columns). Parquet and Iceberg carry those bytes happily, but Postgres text
-    columns reject NUL outright, so the sync fails downstream.
-
+    287 rows each in DimProduct's Spanish and French name columns arrive as a
+    single literal 0x00 byte. Parquet and Iceberg carry those bytes happily, but
+    Postgres text columns reject NUL outright, so the sync fails downstream.
     Cleaning at the load boundary keeps every engine's view of the lake
     identical, instead of pushing the workaround into one consumer.
+
+    Careful about *what those values are*. This once claimed they were NULLs that
+    `bcp -k` had written as 0x00. That is wrong: both columns are pinned
+    `nullable=false`, so SQL Server cannot have held a NULL there — they are
+    literal NCHAR(0) values in the source, and the CSV contains zero empty
+    strings for these columns. Converting them to NULL below is therefore a
+    lossy choice, not a restoration of the source. Verified under DW-10; what
+    they *should* become is DW-19.
     """
     for i, field in enumerate(tbl.schema):
         if not pa.types.is_string(field.type):
@@ -111,7 +117,9 @@ def strip_nul_bytes(tbl: pa.Table) -> pa.Table:
         if not pc.any(pc.match_substring(col, "\x00")).as_py():
             continue
         cleaned = pc.replace_substring(col, pattern="\x00", replacement="")
-        # A value that was nothing but NUL bytes was really a NULL.
+        # A value that was nothing but NUL bytes becomes NULL. Note this is a
+        # lossy narrowing, not a round-trip: the source held NCHAR(0), not NULL.
+        # Kept as-is pending DW-19 rather than changed mid-verification.
         cleaned = pc.if_else(pc.equal(cleaned, ""), pa.scalar(None, pa.string()), cleaned)
         tbl = tbl.set_column(i, field, cleaned)
     return tbl

@@ -283,9 +283,25 @@ These all cost real debugging time; they are recorded so they only cost it once.
 - **JSON over HTTP loses numeric types.** The DuckDB HTTP endpoint returns
   `SUM(...)` as the string `"3649866.5512"`. A BI app on a JSON transport has to
   re-infer types a native driver would have preserved.
-- **`bcp -k` writes some NULL `nvarchar` values as a literal NUL byte**, not an
-  empty field. Parquet and Iceberg carry them fine; Postgres `text` rejects
-  them. Cleaned at the load boundary so every engine sees the same data.
+- **287 `DimProduct` name values arrive as a literal NUL byte**, not an empty
+  field. Parquet and Iceberg carry them fine; Postgres `text` rejects them.
+  Cleaned at the load boundary so every engine sees the same data. These are
+  *not* NULLs that `bcp -k` mangled — both columns are pinned `nullable=false`,
+  so they are literal NCHAR(0) values in the source, and converting them to NULL
+  is a lossy narrowing. Tracked as **DW-19**.
+- **The loader turns the literal source string `NA` into NULL.** Open defect,
+  tracked as **DW-18**. `pyarrow.csv` defaults `null_values` to a 17-token list
+  that includes `NA`, `N/A`, `null` and `NaN`, and the loader passes
+  `strings_can_be_null=True` without overriding it. AdventureWorks uses `NA` as
+  a real value, so **564 source values across 5 columns are currently NULL in
+  the lake** — `dim_product.color` (254), `dim_product.size_range` (307), and
+  all three text columns of `dim_sales_territory` row 11, the star schema's
+  unknown member. Pinning *types* does not pin *which values mean NULL*; the fix
+  is an explicit `null_values=[""]`.
+- **NULL and the empty string are indistinguishable throughout the lake.** `bcp`
+  character format writes an unquoted empty field for both, so the distinction
+  is gone before the loader runs — no loader change can recover it. Measured:
+  146 string columns, **0 empty strings, 192,916 NULLs**. Tracked as **DW-19**.
 
 ## Directory layout
 

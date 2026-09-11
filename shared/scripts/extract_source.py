@@ -329,7 +329,10 @@ def pipe_to_csv(table: TableRef, columns: list[dict], pipe_path: Path) -> Path:
             if not line:
                 continue
             row = line.split("|")
-            # bcp -c writes NULL as empty string; that's already the right CSV behavior.
+            # bcp -c writes NULL as an unquoted empty field — but it writes an empty
+            # string exactly the same way, so the two are indistinguishable from here
+            # on. Measured across the lake: 146 string columns, 0 empty strings,
+            # 192,916 NULLs. Whether that is acceptable is DW-19.
             writer.writerow(row)
     return csv_path
 
