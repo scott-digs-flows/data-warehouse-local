@@ -103,9 +103,15 @@ for c in s['columns']:
 
 ### 4. Null handling
 
-The known hazard: `bcp -k` wrote some NULL `nvarchar` values as a literal NUL
-byte — 287 rows each in `DimProduct`'s Spanish and French name columns. These
-should arrive as **proper NULLs**, not empty strings and not 0x00.
+The known hazard: 287 rows each in `DimProduct`'s Spanish and French name
+columns hold a literal NUL byte (0x00) in the extract. These are **not** NULLs
+that `bcp -k` mangled — both columns are pinned `nullable=false`, so SQL Server
+held no NULL there; they are literal `NCHAR(0)` values meaning "no translation
+available".
+
+Since DW-19 (2026-09-11) they must arrive as **empty strings**: 287 empty, 0
+NULLs, 0 bytes of 0x00 in each column. Expecting NULLs here — as this skill did
+until that date — now produces a false failure. See `DECISIONS.md`.
 
 ```sql
 SELECT
@@ -115,9 +121,20 @@ SELECT
 FROM raw.dim_product;
 ```
 
-`nul_bytes` must be 0. Empty strings and NULLs must be distinguishable — if
-everything is an empty string, `strings_can_be_null=True` was lost from the
-loader's `ConvertOptions`.
+`nul_bytes` must be 0, `empty_strings` 287, `nulls` 0.
+
+These two columns are the **only** empty strings anywhere in the lake — 574 of
+574. Everywhere else an empty source field is indistinguishable from NULL,
+because `bcp` writes both the same way; that ambiguity is an accepted decision,
+not a defect (`DECISIONS.md`). So lake-wide the expectation is 574 empty strings
+and 191,778 NULLs across 146 string columns.
+
+The sharper check, which does not depend on memorised totals: **every string
+column's NULL count should equal the count of genuinely empty fields for that
+column in the source CSV.** Any column where Iceberg has *more* NULLs than the
+source has empty fields means values were destroyed on the way in — that is how
+DW-18 was caught, where pyarrow's default `null_values` was silently converting
+the literal string `NA` to NULL.
 
 ### 5. Referential integrity
 
