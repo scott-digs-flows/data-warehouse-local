@@ -123,25 +123,42 @@ is the architecture anyway.
 
 ## Type notes
 
-From the pinned schema, via `load.py`'s `type_pair()`:
+What a BI tool actually sees in the `raw` views, i.e. source → Iceberg →
+ClickHouse. Verified column-by-column across all 343 columns under DW-12:
 
-| Source | ClickHouse |
-| --- | --- |
-| `bit` | `Bool` |
-| `tinyint` / `smallint` / `int` / `bigint` | `UInt8` / `Int16` / `Int32` / `Int64` |
-| `decimal`, `numeric` | `Decimal(p, s)` |
-| `money` / `smallmoney` | `Decimal(19, 4)` / `Decimal(10, 4)` |
-| `date` | `Date32` |
-| `datetime*` | `DateTime64(6)` |
-| `time` | `String` — **ClickHouse has no native time-of-day type** |
+| Source | Iceberg | ClickHouse view |
+| --- | --- | --- |
+| `bit` | `boolean` | `Bool` |
+| `tinyint` / `smallint` / `int` | `int` | **`Int32` — all three** |
+| `bigint` | `long` | `Int64` |
+| `real` / `float` | `float` / `double` | `Float32` / `Float64` |
+| `decimal`, `numeric` | `decimal(p, s)` | `Decimal(p, s)` |
+| `money` / `smallmoney` | `decimal(19,4)` / `decimal(10,4)` | `Decimal(19, 4)` / `Decimal(10, 4)` |
+| `date` | `date` | `Date32` |
+| `datetime*` | `timestamp` (µs) | `DateTime64(6)` |
+| `time` | `time` | `String` — ClickHouse has no time-of-day type |
 
-Nullable source columns wrap in `Nullable(...)`.
+Columns the pinned schema marks nullable wrap in `Nullable(...)`; the 144 marked
+`NOT NULL` do not (DW-20).
 
-**`ORDER BY` is ClickHouse's main performance lever** and the current default is
-untuned: the loader picks the first non-nullable `*_key` column, so
-`fact_internet_sales` sorts by `product_key`. That is a defensible default, not
-a tuned sorting key. Revisit it before any performance work — but note the
-dataset is too small for performance work to mean anything.
+**The integer row is the one that surprises people.** Iceberg has no 8- or
+16-bit integer, so `tinyint` and `smallint` widen to `int` on the way in and
+reach ClickHouse as `Int32`. Measured: all 128 integer columns in the lake are
+`Int32`, with no `UInt8`, `Int16` or `Int64` anywhere.
+
+> An earlier version of this table described `stacks/clickhouse/load.py`'s
+> `type_pair()` — the **off-pipeline** CSV→MergeTree loader that DW-15 removes —
+> and claimed `tinyint`/`smallint`/`bigint` reach ClickHouse as
+> `UInt8`/`Int16`/`Int64`. That is true of that loader and false of the Iceberg
+> path this skill is about. Corrected under DW-12. The same applies to the
+> `ORDER BY` note that used to sit here: views have no sorting key, so it
+> described the MergeTree path too.
+
+**No type collapses unexpectedly.** Across all 343 columns, 0 differ from the
+pinned schema and 0 non-string source type surfaces as `String`. Note that
+AdventureWorks DW contains **no `time` columns at all**, so the `time` → `String`
+row above is carried from the type mapping, not observed here — a future source
+with `time` columns would be the first real test of it.
 
 ## The engines.yaml contract
 
