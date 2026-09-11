@@ -28,10 +28,11 @@ Conflating these is what made an earlier version of the repo confusing.
 | **Iceberg is the mandatory middle layer** *(2026-09-11)* | Every engine reads from Iceberg; no engine owns the data. Rejected the alternative this supersedes — a typed CSV extract as the neutral layer — because it makes neutrality a property each new loader has to re-implement correctly, rather than a property of the storage. The payoff is not performance, which this dataset cannot show: it is that adding an engine costs a compose service and an `engines.yaml` entry instead of a new ETL pipeline. The cost is real and worth stating — a catalog service and an object store must be running before anything can be read, where a CSV needs nothing. Revisit if that operational cost ever outweighs having one copy of the data, e.g. for a consumer that genuinely cannot reach object storage. |
 | Types pinned from `INFORMATION_SCHEMA`, never inferred | CSV inference disagrees between readers (int32 vs int64, string vs date, decimal handling). Inference would give each stack a subtly different view of the same data, making any cross-stack difference impossible to attribute. |
 | snake_case identifiers | Engines disagree on case folding — Trino lowercases, Postgres folds unquoted names, ClickHouse is case-sensitive, Snowflake uppercases. Normalising once at load time removes the whole class of bug. |
-| ~~ClickHouse as the default stack~~ *(superseded 2026-09-11)* | One container, no catalog, none of the Iceberg failure modes. — This described `stacks/clickhouse/`, the off-pipeline CSV→MergeTree path, and is exactly the reasoning that keeps a shortcut attractive. ClickHouse is now the first **engine**, reading Iceberg in place through `stacks/iceberg-multi-engine/`; it owns no data. The off-pipeline stack's disposition is DW-15. |
+| ~~ClickHouse as the default stack~~ *(superseded 2026-09-11)* | One container, no catalog, none of the Iceberg failure modes. — This described `stacks/clickhouse/`, the off-pipeline CSV→MergeTree path, and is exactly the reasoning that keeps a shortcut attractive. ClickHouse is now the first **engine**, reading Iceberg in place through `stacks/iceberg-multi-engine/`; it owns no data. The off-pipeline stack was removed under DW-15; see the row below. |
 | ClickHouse over StarRocks | Far lighter, and StarRocks' real advantage (materialised views over Iceberg) is invisible at this data volume. |
 | Druid dropped | It cannot read Iceberg — `druid-iceberg-extensions` is an *ingestion input source* that copies into Druid's own segment format. That makes it an ETL target, not an engine, and it cost six containers. |
 | Lakekeeper as the Iceberg catalog | Reasonable open REST catalog that takes access control seriously. No reason found to switch. |
+| The off-pipeline `stacks/clickhouse/` was removed, not converted *(2026-09-11)* | It loaded CSV straight into MergeTree, bypassing Iceberg. Rejected converting it into an Iceberg reader: `stacks/iceberg-multi-engine/ --profile clickhouse` already *is* ClickHouse reading Iceberg, so "conversion" meant deleting its loader, pointing its compose at MinIO and Lakekeeper — destroying the self-containment that was its only distinguishing property — and arriving at a duplicate. The deciding evidence was not architectural though: by removal it **disagreed with the lake about the data**, still carrying the pre-DW-18 `NA`-to-NULL bug and the pre-DW-19 NCHAR(0) handling, and its DDL declared columns non-nullable while `insert_arrow` silently coerced NULL to `''` (see DW-21). A second answer to "what is the data" is exactly what the pinned-schema invariant exists to prevent. Its useful residue was already preserved elsewhere or actively wrong — its DBeaver advice recommended the pgwire route DW-13 disproved. Recoverable from git history if ever needed. |
 | Full-refresh Postgres sync | Reloads in seconds at this size. Incremental would add snapshot bookkeeping and drift bugs for no benefit. |
 | NULL and the empty string are not distinguished in the raw extract *(2026-09-11)* | `bcp` character format writes an unquoted empty field for both, so the distinction is destroyed before any loader runs — 191,778 values across 32 nullable columns are formally ambiguous. Rejected re-extracting with a NULL sentinel (a `bcp queryout` with per-column `ISNULL` mapping): it adds per-column SQL generation to the extract for a distinction that is semantically inert in a BI star schema, where "no value" is one concept. Accepted deliberately rather than engineered around. Revisit if a source arrives where empty string and NULL genuinely differ in meaning. |
 | The lake enforces the source's `NOT NULL` constraints *(2026-09-11)* | The pinned schemas carry a `nullable` flag from `INFORMATION_SCHEMA`; until now the loader read it and never used it, so all 343 Iceberg fields were `optional` and the pinned schema was documentation rather than a constraint. 144 fields are now `required`. Rejected leaving it descriptive: a constraint the storage layer does not enforce is one a future load can break silently, and this lake's whole purpose is that every engine sees the same data. **Only became possible after DW-18 and DW-19** — pinned-NOT-NULL columns actually holding NULLs went 5 → 2 → 0 as those two defects were fixed. Attempted earlier it would have failed on real data, and relaxing the constraint would have looked like the sensible fix, ratifying the corruption. Revisit if a source arrives whose declared constraints its own data violates; the answer there is to fix the extract or correct the pinned schema, not to widen the lake. |
@@ -138,12 +139,16 @@ multi-engine comparison still matters, keep the semantic model engine-neutral
 
 ### Smaller items
 
-- **Tune ClickHouse `ORDER BY`.** The loader picks the first non-nullable
-  `*_key` column, so `fact_internet_sales` sorts by `product_key`. That is a
-  defensible default, not a tuned sorting key — and `ORDER BY` is ClickHouse's
-  main performance lever, so revisit it before any performance work.
-- **Add DuckDB or Trino stacks.** Each is a compose file plus a ~150-line
-  `load.py` reading the same `shared/` artifacts.
+- ~~**Tune ClickHouse `ORDER BY`.**~~ *(obsolete 2026-09-11)* Described the
+  MergeTree loader in `stacks/clickhouse/`, removed under DW-15. ClickHouse now
+  reads Iceberg through pass-through views, which have no sorting key, so there
+  is nothing here to tune. Kept visible because "`ORDER BY` is ClickHouse's main
+  performance lever" is still true of any future MergeTree table.
+- ~~**Add DuckDB or Trino stacks.**~~ *(obsolete 2026-09-11)* "A compose file
+  plus a ~150-line `load.py` reading the same `shared/` artifacts" was the
+  one-stack-per-engine model, superseded above. DuckDB and Trino are already
+  engines in the single stack, behind compose profiles, reading the same Iceberg
+  tables with no loader of their own — which is the point of the architecture.
 - **Revisit StarRocks** if the dataset ever grows enough for materialised views
   over Iceberg to show a difference.
 - **Incremental sync** from Iceberg snapshots, if a full refresh ever gets slow

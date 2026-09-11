@@ -23,12 +23,13 @@ ETL pipeline.
 
 ### Current state vs. target
 
-The repo predates this commitment and does not match it yet:
+The repo predated this commitment. As of DW-15 it matches it — the off-pipeline
+CSV → MergeTree stack has been removed, so there is no longer a path that reaches
+an engine without going through Iceberg.
 
 | Path | Status |
 | --- | --- |
-| `stacks/iceberg-multi-engine/` | Closest to the target. The real loader, catalog, and ClickHouse wiring live here. |
-| `stacks/clickhouse/` | **Off-pipeline.** Loads CSV → MergeTree directly, skipping Iceberg. Slated for removal or conversion to an Iceberg reader. |
+| `stacks/iceberg-multi-engine/` | **The pipeline.** The loader, catalog, and engine wiring live here. Now the only stack. |
 | `experiments/loader-comparison/` | Parked. Do not extend. |
 | `DECISIONS.md` | **Resolved (DW-16).** Iceberg is recorded as the mandatory middle layer; the old position is marked superseded and left visible rather than erased. |
 

@@ -69,7 +69,7 @@ amd64 emulation on Apple Silicon) and exports CSVs plus pinned schemas.
 | ClickHouse pg-wire | 9005 | **The reliable route for GUI clients** |
 | Postgres | 5432 | |
 
-Credentials live in each stack's `.env`, seeded from `.env.example`. Defaults:
+Credentials live in the stack's `.env`, seeded from `.env.example`. Defaults:
 MinIO `admin` / `admin12345`, ClickHouse `default` / `clickhouse`.
 
 ## Failure modes
@@ -137,7 +137,9 @@ docker compose --profile all down -v       # also delete volumes — destroys th
 survive), but every Iceberg table must be reloaded. Stopped stacks cost nothing,
 so prefer `down` over `down -v`.
 
-## Running more than one stack
+## Only one stack
 
-Supported, not the point. Each stack pins its own compose project name and
-volumes, and ports are chosen not to collide. Usually you want one up.
+`stacks/iceberg-multi-engine/` is the only stack. The off-pipeline
+`stacks/clickhouse/` was removed under DW-15, so there is nothing to run
+alongside and nothing to collide with. Engines within the stack sit behind
+compose profiles — that is the knob for paying only for what you use.

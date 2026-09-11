@@ -1,11 +1,9 @@
 # data-warehouse-local
 
-A monorepo for experimenting with different local data-warehouse strategies,
-backing a **custom BI application built in a separate project**.
-
-Each strategy is a **self-contained stack**. Stacks share source data but never
-each other's services — you run one at a time, and nothing is interconnected at
-runtime.
+A local lakehouse backing a **custom BI application built in a separate
+project**. One pipeline: raw files land in Iceberg, and every engine reads from
+there. No engine owns the data, which is what makes adding one cost a compose
+service and an `engines.yaml` entry rather than a new ETL pipeline.
 
 ```
 shared/                       the raw layer — no services, always available
@@ -16,8 +14,8 @@ shared/                       the raw layer — no services, always available
     └── common.py             paths, snake_case, exclusions
 
 stacks/
-├── clickhouse/               1 container · MergeTree · no catalog
-└── iceberg-multi-engine/     6 containers · Iceberg lake · Trino + DuckDB + ClickHouse + Postgres
+└── iceberg-multi-engine/     Iceberg lake (MinIO + Lakekeeper), engines behind
+                              compose profiles: ClickHouse, Trino, DuckDB, Postgres
 
 experiments/
 └── loader-comparison/        parked: PyIceberg vs DuckDB vs DataFusion writers
@@ -50,37 +48,34 @@ uv sync
 # One-time: extract source data (~10 min, spins up SQL Server under emulation)
 uv run python shared/scripts/extract_source.py
 
-# Then pick a stack
-cd stacks/clickhouse
+# Then bring up the lake and an engine
+cd stacks/iceberg-multi-engine
 cp .env.example .env
-docker compose up -d
-uv run python load.py
+docker compose --profile clickhouse up -d
+uv run python scripts/load_iceberg.py            # CSV -> Iceberg `raw`
+uv run python scripts/create_clickhouse_views.py # expose them to ClickHouse
+uv run python scripts/smoke_test.py --engine clickhouse
 ```
 
-## Stacks
+That stack's [README](stacks/iceberg-multi-engine/README.md) carries the full
+sequence, including the `/etc/hosts` prerequisite and the runtime it actually
+takes. **Follow it rather than this summary** if anything here does not work.
 
-### [`clickhouse/`](stacks/clickhouse/) — the default
+## The stack
 
-One container. CSV → MergeTree. 1,060,715 rows in 9.5 MiB, loads in seconds.
-No object store, no catalog, none of the Iceberg failure modes. Connect a GUI
-with a **Postgres driver on port 9005**.
+### [`iceberg-multi-engine/`](stacks/iceberg-multi-engine/)
 
-### [`iceberg-multi-engine/`](stacks/iceberg-multi-engine/) — the shared-lake reference
+MinIO + Lakekeeper hold the lake; engines sit behind compose profiles, so you
+pay only for the one you want. ClickHouse, Trino and DuckDB read the *same*
+Iceberg tables zero-copy; Postgres takes a synced copy because it has no mature
+Iceberg reader. An `engines.yaml` manifest is the contract with the BI app, and
+a cross-engine smoke test proves the connectors agree.
 
-Six containers: MinIO + Lakekeeper catalog, with Trino, DuckDB, and ClickHouse
-reading the *same* Iceberg tables zero-copy, and Postgres taking a synced copy.
-Has per-engine compose profiles, an `engines.yaml` manifest, and a cross-engine
-smoke test proving all five connectors return identical results.
-
-Kept because it is the working reference for the neutral-layer thesis, and the
-place to go when zero-copy or time travel actually matters. Costs nothing while
-stopped. Its README documents a long list of hard-won gotchas.
-
-## Running two stacks at once
-
-Supported but not the point. Each stack pins its own compose project name and
-volumes, and ports are chosen not to collide (ClickHouse's native protocol sits
-on 9010 because MinIO owns 9000). Usually you want just one up.
+There used to be a second, self-contained `clickhouse/` stack that loaded CSV
+straight into MergeTree. It was **removed (DW-15)**: it bypassed Iceberg
+entirely, and by the end it also disagreed with the lake about the data —
+carrying two load-boundary fixes the Iceberg path had received and silently
+coercing NULLs into non-nullable columns. `DECISIONS.md` records why.
 
 ## Why it is shaped this way
 
@@ -94,9 +89,9 @@ sketch of what a semantic layer would need.
 - Python 3.11+ and [uv](https://docs.astral.sh/uv/)
 - On Apple Silicon, SQL Server runs under amd64 emulation during extraction only
 
-The Iceberg stack additionally needs `127.0.0.1 lakekeeper` and
-`127.0.0.1 minio` in `/etc/hosts` — see its README. The ClickHouse stack needs
-nothing beyond Docker.
+The stack additionally needs `127.0.0.1 lakekeeper` and `127.0.0.1 minio` in
+`/etc/hosts` — see its README. Without them, host-side scripts fail in
+confusing, unrelated-looking ways.
 
 ## Dataset
 
