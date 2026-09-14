@@ -169,7 +169,7 @@ what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
 `load_iceberg.py` run.
 
 ```bash
-uv run python scripts/verify_lake.py            # ~18 s, exits non-zero on a bad lake
+uv run python scripts/verify_lake.py            # ~10-18 s, exits non-zero on a bad lake
 uv run python scripts/verify_lake.py --list     # the fifteen checks
 uv run python scripts/verify_lake.py --check null_reconciliation
 uv run python scripts/verify_lake.py --strict   # fail if anything was SKIPPED
@@ -181,7 +181,7 @@ two summaries: row counts, type fidelity, nullability flags *and* that the
 constraint still rejects a NULL, null-count reconciliation, the DW-18/DW-19 value
 invariants, **a value-for-value digest of all 343 columns**, referential
 integrity, primary-key uniqueness, self-referencing hierarchies, decimal
-exactness, and cross-engine agreement. **~18 s wall**, varying mainly with the
+exactness, and cross-engine agreement. **~10-18 s wall**, varying mainly with the
 lake read; the run prints its own breakdown.
 
 **Foreign keys are extracted, and the derivation is measured against them**
@@ -198,8 +198,11 @@ is real in the data but invisible to both other sources:
 rows, 0 orphans, never declared in `sys.foreign_keys`, and not expressible as
 `*_key`. A curated list is the hand-maintained set DW-25 removed, so
 `foreign_key_oracle` **asserts minimality every run**: each curated entry must be
-genuinely unreachable by extraction and by derivation, and adding one either
-already covers fails the suite. Each entry states its reason where it is defined.
+genuinely unreachable by extraction and by derivation, and adding one that either
+source already covers fails the suite. Edges are canonicalised before comparison,
+so reordering a composite's columns does not disguise a duplicate. With the
+artifact absent the half that is still checkable — minimality against derivation —
+still runs. Each entry states its reason where it is defined.
 
 With the artifact absent the suite still runs on derived edges, but says so, and
 `--strict` fails because a check was skipped.

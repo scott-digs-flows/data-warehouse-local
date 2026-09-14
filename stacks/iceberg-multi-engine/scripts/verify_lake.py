@@ -607,6 +607,23 @@ CURATED_JOINS = [
 ]
 
 
+def canonical_edge(edge: tuple) -> tuple:
+    """A relationship's identity, independent of how its columns are spelled.
+
+    A composite FK has more than one spelling: reorder both column tuples
+    consistently and you have the same relationship written differently. Raw
+    tuple comparison treats those as distinct, which let a duplicate of the
+    declared composite pass the minimality assertion AND be checked twice, with
+    the oracle printing that it had been "proved unreachable by extraction".
+
+    Canonicalising sorts the (from_column, to_column) PAIRS together, so the
+    pairing survives while the ordering stops mattering.
+    """
+    f, fc, t, tc = edge
+    pairs = tuple(sorted(zip(fc, tc)))
+    return (f, tuple(a for a, _ in pairs), t, tuple(b for _, b in pairs))
+
+
 def curated_joins() -> list[tuple]:
     return [(c["from_table"], tuple(c["from_columns"]),
              c["to_table"], tuple(c["to_columns"])) for c in CURATED_JOINS]
@@ -647,9 +664,22 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
     """
     auth, provenance = authoritative_joins()
     if provenance == "absent":
+        # Minimality against derivation is still checkable without the artifact,
+        # and referential_integrity trusts the curated edges either way — so run
+        # the half that is possible rather than skipping the safeguard entirely.
+        derived_only, hier_only, _ = derive_joins()
+        canon = {canonical_edge(e) for e in
+                 {(t, (c,), tt, (tc,)) for t, c, tt, tc in derived_only}
+                 | {(t, (c,), t, (tgt,)) for t, c, tgt in hier_only}}
+        red = [e for e in curated_joins() if canonical_edge(e) in canon]
+        if red:
+            return Result(FAIL, f"{len(red)} curated edge(s) already covered by derivation",
+                          [f"{f}.{'+'.join(fc)} -> {t}" for f, fc, t, _ in red])
         return Result(SKIP, f"no {FK_PATH.name} — cannot tell whether the derived edges "
                             f"are right", [f"re-run shared/scripts/extract_source.py to "
-                                           f"produce it; --strict treats this skip as a failure"])
+                                           f"produce it; --strict treats this skip as a failure. "
+                                           f"Minimality against derivation was still "
+                                           f"checked; against extraction it was not."])
     derived, hierarchies, _ = derive_joins()
     D = {(t, (c,), tt, (tc,)) for t, c, tt, tc in derived}
     H = {(t, (c,), t, (tgt,)) for t, c, tgt in hierarchies}
@@ -683,7 +713,14 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
     # asserted in a comment, so the list cannot quietly grow into the
     # hand-maintained set this ticket removed.
     C = set(curated_joins())
-    redundant = sorted((C & A) | (C & D) | (C & H))
+    # FINDING 3: set() deduped the list before minimality could see it, so a
+    # literal duplicate entry was the one redundancy it structurally could not
+    # detect — and the printed count hid it by reporting the deduped size.
+    if len(CURATED_JOINS) != len(C):
+        return Result(FAIL, f"CURATED_JOINS has {len(CURATED_JOINS)} entries but only "
+                            f"{len(C)} distinct edges — duplicate entr(ies) in the list")
+    canon = {canonical_edge(e) for e in A | D | H}
+    redundant = sorted(e for e in C if canonical_edge(e) in canon)
     if redundant:
         return Result(FAIL, f"{len(redundant)} curated edge(s) are NOT minimal — "
                             f"already covered by extraction or derivation",
@@ -890,8 +927,6 @@ def check_cross_engine(src, lake, ctx) -> Result:
     if wrong:
         return Result(FAIL, f"engines disagree on {probe}: want {want:,}; " + ", ".join(wrong),
                       [f"agreed: {', '.join(agree)}"] if agree else [])
-    if not agree:
-        return Result(SKIP, "no engine reachable", [f"not reached: {a}" for a in absent])
     if absent and ctx.get("require_engines"):
         # --require-engines means "every engine the manifest advertises must
         # answer". Split out of --strict under DW-28: carrying both meanings made
@@ -900,7 +935,10 @@ def check_cross_engine(src, lake, ctx) -> Result:
         return Result(FAIL, f"--require-engines: {len(absent)} manifest engine(s) "
                             f"did not answer",
                       [f"not reached: {a}" for a in absent] +
-                      [f"agreed: {', '.join(agree)}"])
+                      ([f"agreed: {', '.join(agree)}"] if agree else
+                       ["NO engine answered at all"]))
+    if not agree:
+        return Result(SKIP, "no engine reachable", [f"not reached: {a}" for a in absent])
     notes = [f"not reached (reported, not ignored): {', '.join(absent)}"] if absent else []
     return Result(PASS, f"{len(agree)} engine(s) agree on {want:,} rows: " + ", ".join(agree), notes)
 
