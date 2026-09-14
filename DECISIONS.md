@@ -104,6 +104,33 @@ Conflating these is what made an earlier version of the repo confusing.
   key it cannot place; extraction is what tells you whether the derivation is
   right. Keeping both, and diffing them, is worth more than either alone.
 
+- **A fabricated constraint that agrees with the data is invisible to every
+  check that validates against data.** This is the failure mode an *authority
+  artifact* is uniquely exposed to, and it is worth understanding before adding a
+  second source of truth of any kind.
+
+  Three bogus foreign-key edges were planted into the verifier's curated list.
+  Two were caught immediately — not by the minimality safeguard, which let all
+  three through, but downstream, because the data contradicted them: a
+  reversed-direction edge produced 18,148 duplicate target keys and 319 orphans,
+  and a flattened composite produced 32,739 duplicates. The third was a duplicate
+  of a real declared composite with its column pairs consistently reordered — the
+  same relationship, differently spelled. Nothing objected, because there was
+  nothing to object to: the relationship is real, so orphan and uniqueness tests
+  pass. The suite checked it twice and reported it as a distinct, verified edge.
+
+  The lesson is not "canonicalise your tuples". It is that **data-driven checks
+  can only catch assertions the data disagrees with.** A claim that is true but
+  redundant, or true but attributed to the wrong authority, is indistinguishable
+  from a correct one by any amount of querying. The only defence is to check the
+  *claim* against the *other sources of the claim* — which is why the curated
+  list asserts its own minimality against extraction and derivation on every run,
+  rather than being trusted because it is short.
+
+  Corollary for anyone adding a third source later: the question to ask is not
+  "is this edge correct?" but "is this edge *unreachable* by what we already
+  have?" Only the second is falsifiable.
+
 - **A wire protocol that runs queries is not therefore browsable.**
   ClickHouse's Postgres wire emulation on 9005 executes SQL correctly, so it
   looks like the obvious route for a GUI — and this repo recommended it as
