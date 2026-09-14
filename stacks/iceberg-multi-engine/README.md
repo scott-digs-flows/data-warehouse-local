@@ -172,7 +172,8 @@ what DW-18, DW-19 and DW-20 all were, and all three were invisible to a green
 uv run python scripts/verify_lake.py            # ~18 s, exits non-zero on a bad lake
 uv run python scripts/verify_lake.py --list     # the fifteen checks
 uv run python scripts/verify_lake.py --check null_reconciliation
-uv run python scripts/verify_lake.py --strict   # an unreachable engine fails too
+uv run python scripts/verify_lake.py --strict   # fail if anything was SKIPPED
+uv run python scripts/verify_lake.py --require-engines  # fail if an engine is down
 ```
 
 It reads the source once and the lake once, then runs fifteen checks over those
@@ -189,9 +190,26 @@ from `sys.foreign_keys`, checked in alongside the pinned schemas and produced by
 the same extract. `foreign_key_oracle` diffs it against the naming-derived set:
 39 of 44 agree, 4 are self-references routed to the hierarchy check, and 1 is the
 composite `fact_internet_sales_reason -> fact_internet_sales` that no
-single-column naming rule can express. Referential integrity checks the union.
-With the artifact absent the suite still runs on derived edges, but says so and
-`--strict` fails.
+single-column naming rule can express. Referential integrity checks the union of all three sources.
+
+**The third source is curated, and provably minimal.** Exactly one relationship
+is real in the data but invisible to both other sources:
+`new_fact_currency_rate.currency_id -> dim_currency.currency_alternate_key` — 50
+rows, 0 orphans, never declared in `sys.foreign_keys`, and not expressible as
+`*_key`. A curated list is the hand-maintained set DW-25 removed, so
+`foreign_key_oracle` **asserts minimality every run**: each curated entry must be
+genuinely unreachable by extraction and by derivation, and adding one either
+already covers fails the suite. Each entry states its reason where it is defined.
+
+With the artifact absent the suite still runs on derived edges, but says so, and
+`--strict` fails because a check was skipped.
+
+**Two flags, two questions** (DW-28). `--strict` asks *was anything silently not
+checked?* and `--require-engines` asks *is the whole manifest reachable?* They
+used to be one flag, which made `--strict` exit 1 on any machine not running all
+five engines — so its actual meaning was unreachable. On a normal dev box with
+one engine up, `--strict` passes and `--require-engines` fails, which is the
+point.
 
 **The derivation itself** (DW-23). Classifying every `*_key`
 column against the pinned schemas yields 44 join edges — where the hand-written

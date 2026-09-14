@@ -22,7 +22,8 @@ so that drift in the *source* is also caught.
 Usage:
     uv run python scripts/verify_lake.py
     uv run python scripts/verify_lake.py --check null_reconciliation --check types
-    uv run python scripts/verify_lake.py --strict      # skipped checks fail too
+    uv run python scripts/verify_lake.py --strict           # fail if anything was SKIPPED
+    uv run python scripts/verify_lake.py --require-engines   # fail if an engine is down
     uv run python scripts/verify_lake.py --list
 """
 
@@ -579,6 +580,37 @@ def derive_joins(tables: set[str] | None = None) -> tuple[list[tuple], list[tupl
 
 FK_PATH = SCHEMA_DIR.parent / "foreign_keys.json"
 
+# A third source of join edges, after extraction and derivation. It exists only
+# for relationships that are real in the data but that NEITHER other source can
+# see, and it is the dangerous one: a curated list is precisely the
+# hand-maintained set DW-25 existed to remove.
+#
+# What keeps it honest is check_foreign_key_oracle asserting MINIMALITY on every
+# run — each entry must be genuinely unreachable by extraction and by the naming
+# convention. Add an edge either of them already covers and the suite fails. That
+# turns "trust us, this list is minimal" into something proved, not promised.
+#
+# Every entry states its reason here, where the entry is, rather than leaving the
+# reason to be reconstructed later.
+CURATED_JOINS = [
+    {
+        "from_table": "new_fact_currency_rate", "from_columns": ("currency_id",),
+        "to_table": "dim_currency", "to_columns": ("currency_alternate_key",),
+        "reason": "Real in the data — 50 rows, 0 orphans, all 'ARS' — but invisible "
+                  "to both other sources. AdventureWorks never declared it, so it is "
+                  "absent from sys.foreign_keys, and `currency_id` does not end in "
+                  "`_key`, so the convention cannot derive it. Note DimCurrency DOES "
+                  "carry a unique index on CurrencyAlternateKey, which is what makes "
+                  "the FK declarable; it simply was never declared. Undeclared is not "
+                  "the same as absent.",
+    },
+]
+
+
+def curated_joins() -> list[tuple]:
+    return [(c["from_table"], tuple(c["from_columns"]),
+             c["to_table"], tuple(c["to_columns"])) for c in CURATED_JOINS]
+
 
 def authoritative_joins() -> tuple[list[tuple], str]:
     """Foreign keys as SQL Server declares them, or nothing if unextracted.
@@ -617,7 +649,7 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
     if provenance == "absent":
         return Result(SKIP, f"no {FK_PATH.name} — cannot tell whether the derived edges "
                             f"are right", [f"re-run shared/scripts/extract_source.py to "
-                                           f"produce it; --strict treats this as a failure"])
+                                           f"produce it; --strict treats this skip as a failure"])
     derived, hierarchies, _ = derive_joins()
     D = {(t, (c,), tt, (tc,)) for t, c, tt, tc in derived}
     H = {(t, (c,), t, (tgt,)) for t, c, tgt in hierarchies}
@@ -646,6 +678,18 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
     if broken:
         return Result(FAIL, f"{len(broken)} declared FK(s) cannot be checked", broken[:10])
 
+    # MINIMALITY. The curated list is only defensible if every entry is
+    # genuinely unreachable by the other two sources. Checked here rather than
+    # asserted in a comment, so the list cannot quietly grow into the
+    # hand-maintained set this ticket removed.
+    C = set(curated_joins())
+    redundant = sorted((C & A) | (C & D) | (C & H))
+    if redundant:
+        return Result(FAIL, f"{len(redundant)} curated edge(s) are NOT minimal — "
+                            f"already covered by extraction or derivation",
+                      [f"{f}.{'+'.join(fc)} -> {t}: remove it from CURATED_JOINS"
+                       for f, fc, t, _ in redundant])
+
     agreed, routed = A & D, A & H
     missed, invented = sorted(A - D - H), sorted(D - A)
     notes = [f"{len(agreed)}/{len(A)} declared FKs the naming convention gets exactly right",
@@ -659,8 +703,11 @@ def check_foreign_key_oracle(src, lake, ctx) -> Result:
         notes.append(f"{len(invented)} edge(s) the convention infers that SQL Server never "
                      f"declared — clean, checked anyway, not contractual: "
                      + ", ".join(f"{f}.{fc[0]}" for f, fc, _, _ in invented))
+    notes.append(f"{len(C)} curated edge(s), each proved unreachable by extraction "
+                 f"and derivation: "
+                 + "; ".join(f"{f}.{fc[0]} -> {t}.{tc[0]}" for f, fc, t, tc in sorted(C)))
     return Result(PASS, f"{len(agreed)}/{len(A)} declared FKs derivable from names; "
-                        f"{len(missed)} only from the extract", notes)
+                        f"{len(missed)} from the extract; {len(C)} curated", notes)
 
 
 def derive_primary_keys() -> list[tuple[str, str]]:
@@ -707,7 +754,8 @@ def check_referential_integrity(src, lake, ctx) -> Result:
     # Union: the declared set is the contract, the derived set adds clean edges
     # SQL Server never declared. Checking both is strictly more coverage, and
     # the oracle check reports which is which.
-    fks = sorted({(t, (c,), tt, (tc,)) for t, c, tt, tc in derived} | set(auth))
+    fks = sorted({(t, (c,), tt, (tc,)) for t, c, tt, tc in derived}
+                 | set(auth) | set(curated_joins()))
     if unclassified:
         return Result(FAIL, f"{len(unclassified)} *_key column(s) could not be classified",
                       unclassified[:10] +
@@ -844,11 +892,13 @@ def check_cross_engine(src, lake, ctx) -> Result:
                       [f"agreed: {', '.join(agree)}"] if agree else [])
     if not agree:
         return Result(SKIP, "no engine reachable", [f"not reached: {a}" for a in absent])
-    if absent and ctx.get("strict"):
-        # --strict means "every engine the manifest advertises must answer".
-        # Previously this only failed when ALL engines were down, so a missing
-        # Postgres sync passed a --strict run green.
-        return Result(FAIL, f"--strict: {len(absent)} manifest engine(s) did not answer",
+    if absent and ctx.get("require_engines"):
+        # --require-engines means "every engine the manifest advertises must
+        # answer". Split out of --strict under DW-28: carrying both meanings made
+        # --strict exit 1 on any dev machine regardless of whether anything was
+        # skipped, so its actual meaning was unreachable.
+        return Result(FAIL, f"--require-engines: {len(absent)} manifest engine(s) "
+                            f"did not answer",
                       [f"not reached: {a}" for a in absent] +
                       [f"agreed: {', '.join(agree)}"])
     notes = [f"not reached (reported, not ignored): {', '.join(absent)}"] if absent else []
@@ -889,11 +939,9 @@ KNOWN_GAPS = [
     "Referential integrity counts EDGES, not rows, and skips NULL foreign keys, so a "
     "nullable FK that is entirely NULL passes while testing nothing. The run reports "
     "how many non-NULL values were compared and names any edge that tested nothing.",
-    "new_fact_currency_rate.currency_id -> dim_currency.currency_alternate_key is "
-    "checked by nothing. It is real in the data (50 rows, 0 orphans) but is neither "
-    "declared in sys.foreign_keys nor expressible as *_key, so it falls through the "
-    "seam between derivation and extraction. Undeclared is not the same as absent — "
-    "the previous wording claimed this was closed when only its composite sibling was.",
+    "Relationships that are real, undeclared AND underivable, beyond the one in "
+    "CURATED_JOINS. Finding them needs a human reading the data; nothing here can "
+    "discover them, and the curated list only covers what someone already noticed.",
     "Cross-engine agreement beyond one COUNT(*) on one table. smoke_test.py also "
     "compares a grouped SUM; two engines could disagree on every decimal and pass here.",
     "Whether the LAKE rejects a NULL in a required column. nullability_enforced tests "
@@ -920,7 +968,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--check", action="append", dest="checks",
                    help="Run only these checks. Repeatable. Default: all.")
     p.add_argument("--strict", action="store_true",
-                   help="Treat SKIP as failure — for a gate where an absent engine is a problem.")
+                   help="Fail if any check was SKIPPED. Answers 'was anything silently "
+                        "not checked?' — nothing to do with which engines are running.")
+    p.add_argument("--require-engines", action="store_true",
+                   help="Fail if any engine in engines.yaml did not answer. Answers "
+                        "'is the whole manifest reachable?' — expected to fail on a dev "
+                        "machine running one engine.")
     p.add_argument("--list", action="store_true", help="List check names and exit.")
     return p.parse_args()
 
@@ -974,7 +1027,7 @@ def main() -> None:
     lake = read_lake(catalog)
     t_lake = time.perf_counter() - t0 - t_src
 
-    ctx = {"catalog": catalog, "strict": args.strict}
+    ctx = {"catalog": catalog, "require_engines": args.require_engines}
     results: dict[str, tuple[Result, float]] = {}
     for name in names:
         s = time.perf_counter()
